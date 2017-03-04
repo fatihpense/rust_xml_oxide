@@ -1,0 +1,13 @@
+[package]
+name = "xml_oxide"
+version = "0.0.1"
+authors = ["Fatih Pense <fatihpense@gmail.com>"]
+
+description = "XML parser implementation for SAX interface: xml_sax"
+repository = "https://github.com/fatihpense/rust_xml_oxide"
+keywords = ["XML", "SAX", "parser"]
+categories = ["parsing","parser-implementations"]
+license = "MIT"
+
+[dependencies]
+xml_sax = "0.0.1"
