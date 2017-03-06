@@ -204,7 +204,7 @@ pub fn prepare_rules<'a>() -> Parser<'a> {
     // [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
     let mut AttValue_char_or_ref = ParsingRule::new("([^<&\"] | Reference)", RuleType::Or);
     AttValue_char_or_ref.children_names.push("[^<&\"]");
-    AttValue_char_or_ref.children_names.push("Reference");
+    AttValue_char_or_ref.children_names.push("ReferenceInAttrVal");
     rule_nameRegistry.insert(AttValue_char_or_ref.rule_name, AttValue_char_or_ref);
 
     let mut AttValue_char_or_ref_zom = ParsingRule::new("([^<&\"] | Reference)*",
@@ -542,6 +542,12 @@ pub fn prepare_rules<'a>() -> Parser<'a> {
     Reference.children_names.push("EntityRef");
     Reference.children_names.push("CharRef");
     rule_nameRegistry.insert(Reference.rule_name, Reference);
+
+    // [67.5] Reference in AttVal ::= EntityRef | CharRef
+    let mut ReferenceInAttrVal = ParsingRule::new("ReferenceInAttrVal", RuleType::Or);
+    ReferenceInAttrVal.children_names.push("EntityRef");
+    ReferenceInAttrVal.children_names.push("CharRef");
+    rule_nameRegistry.insert(ReferenceInAttrVal.rule_name, ReferenceInAttrVal);
 
     // [68] EntityRef ::= '&' Name ';'
     let mut EntityRef = ParsingRule::new("EntityRef", RuleType::Sequence);

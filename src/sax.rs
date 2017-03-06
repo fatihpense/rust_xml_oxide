@@ -7,6 +7,7 @@ use std::io::Read;
 use std::collections::HashMap;
 
 use char_iter;
+use std::char;
 
 use xml_sax::*;
 
@@ -183,6 +184,50 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
             let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
             self.content_handler.as_mut().unwrap().characters(&s);
         }
+        // rule 67
+        if rulename == "Reference" {
+            let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
+            let result: String;
+            // rule 66 CharRef
+            if s.starts_with("&#x") {
+
+                // parse hex
+                let hex_val: String = s.chars()
+                    .filter(|&n| n != '&' && n != '#' && n != 'x' && n != ';')
+                    .collect();
+                // todo dont panic give error.
+                result =
+                    char::from_u32(u32::from_str_radix(&hex_val, 16).unwrap()).unwrap().to_string();
+                // .collect::<Vec<char>>(); also working but vec
+
+            } else if s.starts_with("&#") {
+
+                // parse scalar
+                let scalar_val: String = s.chars()
+                    .filter(|&n| n != '&' && n != '#' && n != ';')
+                    .collect();
+                // todo dont panic give error.
+                result = char::from_u32(u32::from_str_radix(&scalar_val, 10).unwrap())
+                    .unwrap()
+                    .to_string();
+            } else {
+
+                // rule 68 EntityRef
+                result = match s.as_ref() {
+                    "&quot;" => '"'.to_string(),
+                    "&amp;" => '&'.to_string(),
+                    "&apos;" => '\''.to_string(),
+                    "&lt;" => '<'.to_string(),
+                    "&gt;" => '>'.to_string(),
+
+                    _ => "".to_string(), //TODO give error
+                };
+
+            }
+            self.content_handler.as_mut().unwrap().characters(&result);
+        }
+
+
     }
 }
 

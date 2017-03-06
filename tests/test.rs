@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::io::BufRead;
 
 
-
+use std::char;
 
 
 
@@ -101,7 +101,7 @@ impl xml_sax::ContentHandler for MyCollectorSaxHandler {
         }
     }
     fn characters(&mut self, characters: &str) {
-        println!("characters: {}", characters);
+        // println!("characters: {}", characters);
         self.characters_buf.push_str(characters);
     }
     fn offset(&mut self, offset: usize) {
@@ -113,7 +113,7 @@ impl xml_sax::ContentHandler for MyCollectorSaxHandler {
 
 
 #[test]
-fn test1() {
+fn test_basic() {
 
     let mut s = String::from("<rootEl><value>5</value></rootEl>");
     let mut reader = BufReader::new(s.as_bytes());
@@ -139,6 +139,44 @@ fn test1() {
     assert_eq!(my_sax_handler.end_el_name_vec.get(0).unwrap(), "value");
 
     assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(), "5");
+    // assert_eq!(my_sax_handler.end, );
+
+}
+
+
+#[test]
+fn test_66_EntityRef() {
+
+
+    let c = char::from_u32(60).unwrap();
+    // println!("{}", c);
+    assert_eq!(c, '<'); //8898  &#x022C2;    60 &#x0003C;
+
+    let c2 = char::from_u32(u32::from_str_radix("0003C", 16).unwrap()).unwrap();
+    // println!("{}", c2);
+    assert_eq!(c2, '<'); //8898  &#x022C2;    60 &#x0003C;
+
+
+
+    let mut s = String::from("<rootEl><value>1&lt;2&#60;3&#x0003C;4</value></rootEl>");
+    let mut reader = BufReader::new(s.as_bytes());
+    let mut my_sax_handler = MyCollectorSaxHandler {
+        start_counter: 0,
+        end_counter: 0,
+        char_counter: 0,
+        start_el_name_vec: Vec::new(),
+        end_el_name_vec: Vec::new(),
+        characters_collected_vec: Vec::new(),
+        characters_buf: String::new(),
+    };
+    {
+        let mut sax_parser = SaxParser::new();
+        sax_parser.set_content_handler(&mut my_sax_handler);
+        sax_parser.parse(&mut reader);
+    }
+
+    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+               "1<2<3<4");
     // assert_eq!(my_sax_handler.end, );
 
 }
