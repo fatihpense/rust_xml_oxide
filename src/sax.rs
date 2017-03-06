@@ -132,7 +132,7 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
         if starting_pos > ending_pos || ending_pos == 0 {
             return;
         }
-        if (rulename == "Name") {
+        if rulename == "Name" {
             let s: String = chars[starting_pos..ending_pos]
                 .into_iter()
                 .cloned()
@@ -151,7 +151,7 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
             self.attribute_values.push(s);
         }
 
-        if (rulename == "Attribute") {
+        if rulename == "Attribute" {
             let name: String = self.element_names.pop().unwrap();
             let value: String = self.attribute_values.pop().unwrap();
             let mut attr: Attribute = Attribute::new();
@@ -160,24 +160,24 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
             self.attributes.attribute_vec.push(Box::new(attr));
         }
 
-        if (rulename == "element") {
+        if rulename == "element" {
             self.counter = self.counter + 1;
         }
 
-        if (rulename == "STag") {
+        if rulename == "STag" {
             let name: String = self.element_names.pop().unwrap();
             self.content_handler.as_mut().unwrap().start_element(&name, &self.attributes);
         }
 
-        if (rulename == "EmptyElemTag") {
+        if rulename == "EmptyElemTag" {
 
             let name: String = self.element_names.pop().unwrap();
             self.content_handler.as_mut().unwrap().start_element(&name, &self.attributes);
         }
 
-        if (rulename == "ETag") {
-            let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
-            self.content_handler.as_mut().unwrap().end_element(&s);
+        if rulename == "ETag" {
+            let name: String = self.element_names.pop().unwrap();
+            self.content_handler.as_mut().unwrap().end_element(&name);
         }
         if rulename == "CharData?" {
             let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
