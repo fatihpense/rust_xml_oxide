@@ -7,6 +7,7 @@ use std::io::Read;
 use std::collections::HashMap;
 
 use char_iter;
+use std::char;
 
 use xml_sax::*;
 
@@ -132,7 +133,7 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
         if starting_pos > ending_pos || ending_pos == 0 {
             return;
         }
-        if (rulename == "Name") {
+        if rulename == "Name" {
             let s: String = chars[starting_pos..ending_pos]
                 .into_iter()
                 .cloned()
@@ -151,7 +152,7 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
             self.attribute_values.push(s);
         }
 
-        if (rulename == "Attribute") {
+        if rulename == "Attribute" {
             let name: String = self.element_names.pop().unwrap();
             let value: String = self.attribute_values.pop().unwrap();
             let mut attr: Attribute = Attribute::new();
@@ -160,29 +161,73 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
             self.attributes.attribute_vec.push(Box::new(attr));
         }
 
-        if (rulename == "element") {
+        if rulename == "element" {
             self.counter = self.counter + 1;
         }
 
-        if (rulename == "STag") {
+        if rulename == "STag" {
             let name: String = self.element_names.pop().unwrap();
             self.content_handler.as_mut().unwrap().start_element(&name, &self.attributes);
         }
 
-        if (rulename == "EmptyElemTag") {
+        if rulename == "EmptyElemTag" {
 
             let name: String = self.element_names.pop().unwrap();
             self.content_handler.as_mut().unwrap().start_element(&name, &self.attributes);
         }
 
-        if (rulename == "ETag") {
-            let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
-            self.content_handler.as_mut().unwrap().end_element(&s);
+        if rulename == "ETag" {
+            let name: String = self.element_names.pop().unwrap();
+            self.content_handler.as_mut().unwrap().end_element(&name);
         }
         if rulename == "CharData?" {
             let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
             self.content_handler.as_mut().unwrap().characters(&s);
         }
+        // rule 67
+        if rulename == "Reference" {
+            let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
+            let result: String;
+            // rule 66 CharRef
+            if s.starts_with("&#x") {
+
+                // parse hex
+                let hex_val: String = s.chars()
+                    .filter(|&n| n != '&' && n != '#' && n != 'x' && n != ';')
+                    .collect();
+                // todo dont panic give error.
+                result =
+                    char::from_u32(u32::from_str_radix(&hex_val, 16).unwrap()).unwrap().to_string();
+                // .collect::<Vec<char>>(); also working but vec
+
+            } else if s.starts_with("&#") {
+
+                // parse scalar
+                let scalar_val: String = s.chars()
+                    .filter(|&n| n != '&' && n != '#' && n != ';')
+                    .collect();
+                // todo dont panic give error.
+                result = char::from_u32(u32::from_str_radix(&scalar_val, 10).unwrap())
+                    .unwrap()
+                    .to_string();
+            } else {
+
+                // rule 68 EntityRef
+                result = match s.as_ref() {
+                    "&quot;" => '"'.to_string(),
+                    "&amp;" => '&'.to_string(),
+                    "&apos;" => '\''.to_string(),
+                    "&lt;" => '<'.to_string(),
+                    "&gt;" => '>'.to_string(),
+
+                    _ => "".to_string(), //TODO give error
+                };
+
+            }
+            self.content_handler.as_mut().unwrap().characters(&result);
+        }
+
+
     }
 }
 
