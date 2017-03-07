@@ -184,6 +184,13 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
             let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
             self.content_handler.as_mut().unwrap().characters(&s);
         }
+
+        // [18] CDSect
+        if rulename == "CDSect" {
+            let s: String = chars[starting_pos + 9..ending_pos - 3].into_iter().cloned().collect();
+            self.content_handler.as_mut().unwrap().characters(&s);
+        }
+
         // rule 67
         if rulename == "Reference" {
             let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();

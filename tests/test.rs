@@ -180,3 +180,30 @@ fn test_66_EntityRef() {
     // assert_eq!(my_sax_handler.end, );
 
 }
+
+#[test]
+fn test_18_CDATA() {
+
+    let mut s = String::from("<rootEl>1&lt;2&#60;3&#x0003C;4<![CDATA[ \
+                              1&lt;2&#60;3&#x0003C;4]]><![CDATA[]]></rootEl>");
+    let mut reader = BufReader::new(s.as_bytes());
+    let mut my_sax_handler = MyCollectorSaxHandler {
+        start_counter: 0,
+        end_counter: 0,
+        char_counter: 0,
+        start_el_name_vec: Vec::new(),
+        end_el_name_vec: Vec::new(),
+        characters_collected_vec: Vec::new(),
+        characters_buf: String::new(),
+    };
+    {
+        let mut sax_parser = SaxParser::new();
+        sax_parser.set_content_handler(&mut my_sax_handler);
+        sax_parser.parse(&mut reader);
+    }
+    println!("{}",
+             my_sax_handler.characters_collected_vec.get(0).unwrap());
+    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+               "1<2<3<4 1&lt;2&#60;3&#x0003C;4");
+
+}
