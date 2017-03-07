@@ -207,3 +207,59 @@ fn test_18_CDATA() {
                "1<2<3<4 1&lt;2&#60;3&#x0003C;4");
 
 }
+
+
+// comments should be ignored in content handler
+#[test]
+fn test_15_Comment() {
+
+    let mut s = String::from("<rootEl>comments<!--are ignored--><!---->.</rootEl>");
+    let mut reader = BufReader::new(s.as_bytes());
+    let mut my_sax_handler = MyCollectorSaxHandler {
+        start_counter: 0,
+        end_counter: 0,
+        char_counter: 0,
+        start_el_name_vec: Vec::new(),
+        end_el_name_vec: Vec::new(),
+        characters_collected_vec: Vec::new(),
+        characters_buf: String::new(),
+    };
+    {
+        let mut sax_parser = SaxParser::new();
+        sax_parser.set_content_handler(&mut my_sax_handler);
+        sax_parser.parse(&mut reader);
+    }
+    println!("{}",
+             my_sax_handler.characters_collected_vec.get(0).unwrap());
+    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+               "comments.");
+
+}
+
+#[test]
+#[should_panic]
+fn test_15_Comment_not_well_formed() {
+
+    let mut s = String::from("<rootEl>comments<!-- are not well formed with 3 \
+                              hyphen at the end unless it is empty---><!---->.</rootEl>");
+    let mut reader = BufReader::new(s.as_bytes());
+    let mut my_sax_handler = MyCollectorSaxHandler {
+        start_counter: 0,
+        end_counter: 0,
+        char_counter: 0,
+        start_el_name_vec: Vec::new(),
+        end_el_name_vec: Vec::new(),
+        characters_collected_vec: Vec::new(),
+        characters_buf: String::new(),
+    };
+    {
+        let mut sax_parser = SaxParser::new();
+        sax_parser.set_content_handler(&mut my_sax_handler);
+        sax_parser.parse(&mut reader);
+    }
+    println!("{}",
+             my_sax_handler.characters_collected_vec.get(0).unwrap());
+    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+               "comments.");
+
+}

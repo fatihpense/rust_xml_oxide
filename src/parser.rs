@@ -292,6 +292,35 @@ pub fn prepare_rules<'a>() -> Parser<'a> {
     rule_nameRegistry.insert(CharDataOptional.rule_name, CharDataOptional);
 
 
+    // [15] Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+    let mut Comment_start = ParsingRule::new("'<!--'", RuleType::CharSequence);
+    Comment_start.expected_chars = "<!--".chars().collect();
+    rule_nameRegistry.insert(Comment_start.rule_name, Comment_start);
+
+    let mut Comment_end = ParsingRule::new("'-->'", RuleType::CharSequence);
+    Comment_end.expected_chars = "-->".chars().collect();
+    rule_nameRegistry.insert(Comment_end.rule_name, Comment_end);
+
+    let mut Comment_2hyphen = ParsingRule::new("'--'", RuleType::CharSequence);
+    Comment_2hyphen.expected_chars = "--".chars().collect();
+    rule_nameRegistry.insert(Comment_2hyphen.rule_name, Comment_2hyphen);
+
+    let mut Comment_inside = ParsingRule::new("(Char - '--')", RuleType::WithException);
+    Comment_inside.children_names.push("Char");
+    Comment_inside.children_names.push("'--'");
+    rule_nameRegistry.insert(Comment_inside.rule_name, Comment_inside);
+
+    let mut Comment_inside_zom = ParsingRule::new("(Char - '--')*", RuleType::ZeroOrMore);
+    Comment_inside_zom.children_names.push("(Char - '--')");
+    rule_nameRegistry.insert(Comment_inside_zom.rule_name, Comment_inside_zom);
+
+    let mut Comment = ParsingRule::new("Comment", RuleType::Sequence);
+    Comment.children_names.push("'<!--'");
+    Comment.children_names.push("(Char - '--')*");
+    Comment.children_names.push("'-->'");
+    rule_nameRegistry.insert(Comment.rule_name, Comment);
+
+
     // [18] CDSect ::= CDStart CData CDEnd
     let mut CDSect = ParsingRule::new("CDSect", RuleType::Sequence);
     CDSect.children_names.push("CDStart");
@@ -484,8 +513,9 @@ pub fn prepare_rules<'a>() -> Parser<'a> {
     // put element to last child for reducing backtrack needs
     let mut content_inside = ParsingRule::new("(element | Reference | CDSect | PI | Comment)",
                                               RuleType::Or);
-    content_inside.children_names.push("CDSect");
     content_inside.children_names.push("Reference");
+    content_inside.children_names.push("CDSect");
+    content_inside.children_names.push("Comment");
     content_inside.children_names.push("element");
     // TODO add child here
     rule_nameRegistry.insert(content_inside.rule_name, content_inside);
