@@ -10,4 +10,4 @@ categories = ["parsing","parser-implementations"]
 license = "MIT"
 
 [dependencies]
-xml_sax = "0.0.1"
+xml_sax = "0.0.2"
