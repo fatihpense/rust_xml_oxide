@@ -31,6 +31,10 @@ impl SAXAttribute for Attribute {
     fn get_value(&self) -> &str {
         &self.value
     }
+
+    fn get_qualified_name(&self) -> &str {
+        &self.qualified_name
+    }
 }
 
 impl Attribute {

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fp:books xmlns:fp="http://github.com/fatihpense">
+    <fp:book fp:archive="true" fp:read="true" fp:gifted="false" >
+        <fp:title_english>Madonna in a Fur Coat</fp:title_english>
+        <fp:title_original>Kürk Mantolu Madonna</fp:title_original>
+        <fp:author>Sabahattin Ali</fp:author>
+        <fp:quote_english>It is, perhaps, easier to dismiss a man whose face gives no indication of an inner life. And what a pity that is: a dash of curiosity is all it takes to stumble upon treasures we never expected.</fp:quote_english>
+        <fp:original_language>tr</fp:original_language>
+    </fp:book>
+</fp:books>
