@@ -117,7 +117,7 @@ impl Attributes {
 }
 
 impl<'a> ParsingPassLogStream for SaxParser<'a> {
-    fn try(&mut self, rulename: &str, starting_pos: usize) -> () {
+    fn try(&mut self, rulename: String, starting_pos: usize) -> () {
 
         if rulename == "STag" || rulename == "EmptyElemTag" {
             self.element_names.clear();
@@ -127,7 +127,7 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
     }
 
     fn pass(&mut self,
-            rulename: &str,
+            rulename: String,
             chars: &Vec<char>,
             starting_pos: usize,
             ending_pos: usize)
