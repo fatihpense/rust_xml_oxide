@@ -1,22 +1,23 @@
+extern crate indextree;
 extern crate xml_oxide;
 extern crate xml_sax;
 
-use xml_oxide::tree::*;
+
+use indextree::Arena;
+use std::ops::Index;
+
 
 #[test]
-fn tree() {
-    let mut arena = Arena { nodes: Vec::new() };
+fn tree2() {
+    // Create a new arena
+    let arena = &mut Arena::new();
 
-    let id = new_node(&mut arena, "fp".to_owned());
+    // Add some new nodes to the arena
+    let a = arena.new_node("Char".to_owned());
+    let b = arena.new_node("Char".to_owned());
 
-    {
-        let mut node = get_node(&mut arena, id);
-        println!("{}", node.data);
-    }
-
-    {
-        let mut node = get_node(&mut arena, id);
-        println!("{}", node.data);
-    }
-
+    // Append a to b
+    a.append(b, arena);
+    assert_eq!(b.ancestors(arena).into_iter().count(), 2);
+    println!("{:?}", arena.index(a).data);
 }
