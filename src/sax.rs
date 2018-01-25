@@ -11,6 +11,12 @@ use std::char;
 
 use xml_sax::*;
 
+use tree::*;
+
+use indextree::Arena;
+use std::ops::Index;
+use std::ops::IndexMut;
+
 pub struct SaxParser<'a> {
     content_handler: Option<&'a mut ContentHandler>,
     counter: i64,
@@ -351,84 +357,41 @@ impl<'a> SaxParser<'a> {
         let parser_rules = prepare_rules();
         let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
 
-        let mut resume_vec = Vec::new();
-        let mut state_vec = Vec::new();
-        let offset: usize = 0;
 
-
-        let mut chars: Vec<char> = Vec::new();
+        //let mut chars: Vec<char> = Vec::new();
         let citer = char_iter::chars(read);
 
+ let mut arena = &mut Arena::new();
 
-        let mut chunk_count: usize = 0;
-        for ch in citer {
+
+let node=  PNode{    rulename: "document".to_owned(),
+                    state: StateType::Init,
+                    current_sequence: 0};
+
+    // Add some new nodes to the arena
+    let a = arena.new_node(node);
+
+        for (i,ch) in citer.enumerate() {
 
             if ch.is_ok() {
-
-                chars.push(ch.unwrap());
-                chunk_count += 1;
-                if chunk_count >= 10000 {
-                    chunk_count = 0;
-
-
-                    let result = parse_with_rule(&parser_rules.rule_vec,
-                                                 &rule,
-                                                 &chars,
-                                                 0,
-                                                 offset,
-                                                 &mut resume_vec,
-                                                 &mut state_vec,
-                                                 self);
-                    self = result.0;
-
-
-                    let mut erasable_pos: usize = 0;
-                    let mut split_pos: usize = 0;
-                    for (index, state) in state_vec.iter().enumerate() {
-                        if state.2 {
-                            // no backtrack req true
-                            erasable_pos = state.1; //pos
-                            split_pos = index + 1;
-                        } else {
-                            split_pos = index;
-                            break;
-                        }
-                    }
-
-                    for state in &mut state_vec {
-                        state.1 = 0;
-                    }
-                    state_vec.split_off(split_pos);
-
-                    state_vec.reverse();
-                    resume_vec = state_vec;
-
-                    state_vec = Vec::new();
-                    // starting position can be different erasable_pos?
-                    &self.content_handler.as_mut().unwrap().offset(erasable_pos);
-                    chars = chars.split_off(erasable_pos);
-
-                }
+//parse with state char by char
+                println!("" );
+                PNode::new_char(&parser_rules,a, arena, ch.unwrap());
+                println!("PRINTING");
+                PNode::print(a, arena,0);
+                //node.new_char(&mut arena, ch.unwrap());
+               
+               if i==1{
+               break;
+               }
+               
             } else {
 
                 break;
             }
         }
+         //PNode::print(a, arena);
 
-        // last bit
-        let result = parse_with_rule(&parser_rules.rule_vec,
-                                     &rule,
-                                     &chars,
-                                     0,
-                                     offset,
-                                     &mut resume_vec,
-                                     &mut state_vec,
-                                     self);
-        self = result.0;
-
-
-        &self.content_handler.as_mut().unwrap().offset(chars.len());
-
-
-    }
+     }
+ 
 }

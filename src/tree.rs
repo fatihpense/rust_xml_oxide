@@ -1,56 +1,327 @@
-
+use parser::ParsingRule;
+use indextree::Arena;
+use indextree;
+use std::ops::IndexMut;
+use std::ops::Index;
+use parser::Parser;
+use parser::RuleType;
 //https://rust-leipzig.github.io/architecture/2016/12/20/idiomatic-trees-in-rust/
 
-#[derive(Debug)]
-pub struct NodeId {
-    index: usize,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateType {
+    Init,
+    Pass,
+    Fail,
+    Wait,
 }
 
-#[derive(Debug)]
-pub struct Arena {
-    pub nodes: Vec<Node>,
+
+#[derive(Clone, Debug)]
+pub struct PNode {
+    pub rulename: String,
+    //pub children: Vec<Node>,
+    pub state: StateType,
+    pub current_sequence: usize, //pub data: String
 }
 
-#[derive(Debug)]
-pub struct Node {
-    pub parent: Option<usize>,
-    pub children: Vec<usize>,
+impl PNode {
+    pub fn new_char(
+        parser_rules: &Parser,
+        id: indextree::NodeId,
+        arena: &mut Arena<PNode>,
+        c: char,
+    ) -> (StateType, bool) {
+        let mut children_names: Vec<String> = Vec::new();
+        let mut pnode2: PNode;
 
-    pub data: String,
-}
+        //HANDLE IF ITS CHAR RELATED
+        {
+            let mut pnode: &mut PNode;
+            let mut node = arena.index_mut(id);
+            pnode = &mut node.data;
+            pnode2 = pnode.clone();
+            println!("starting..{:?}", pnode.rulename);
+            //let state = &mut pnode.state;
+            let rule: &ParsingRule =
+                &parser_rules.rule_vec[*parser_rules.rule_registry.get(&pnode.rulename).unwrap()];
 
-fn children(node: &Node) {
-    match node.parent {
-        None => println!("no parent"),
-        Some(parent) => println!(" parent => {}", parent),
+            //CHAR RELATED
+            match rule.rule_type {
+                RuleType::Chars => {
+                    for range in &rule.expected_char_ranges {
+                        if range.0 <= c && c <= range.1 {
+                            //TODO logger pass?
+                            println!("PASS");
+                            pnode.state = StateType::Pass;
+                            return (StateType::Pass, true);
+                        }
+                    }
+                    for check_char in &rule.expected_chars {
+                        if *check_char == c {
+                            //TODO logger pass?
+                            println!("PASS");
+                            pnode.state = StateType::Pass;
+                            return (StateType::Pass, true);
+                        }
+                    }
+                    pnode.state = StateType::Fail;
+                    return (StateType::Fail, false);
+                }
+                RuleType::CharsNot => {
+                    for range in &rule.expected_char_ranges {
+                        if range.0 <= c && c <= range.1 {
+                            pnode.state = StateType::Fail;
+                            return (StateType::Fail, false);
+                        }
+                    }
+                    for check_char in &rule.expected_chars {
+                        if *check_char == c {
+                            pnode.state = StateType::Fail;
+                            return (StateType::Fail, false);
+                        }
+                    }
+                    pnode.state = StateType::Pass;
+                    return (StateType::Pass, true);
+                }
+                RuleType::CharSequence => {
+                    let c2 = &rule.expected_chars[pnode.current_sequence];
+                    println!("CharSequence: {:?} =? {:?}", c,c2 );
+                    if c == *c2 {
+                        pnode.current_sequence += 1;
+                        if pnode.current_sequence >= rule.expected_chars.len() {
+                            pnode.state = StateType::Pass;
+                            return (StateType::Pass, true);
+                        } else {
+                             println!("AHOYY" );
+                             pnode.state = StateType::Wait;
+                            return (StateType::Wait, true);
+                        }
+                    } else {
+                        pnode.state = StateType::Fail;
+                        return (StateType::Fail, true);
+                    }
+                }
+                _ => {
+                    // do nothing?
+                    // children_names = rule.children_names.clone();
+
+                }
+            }
+            ()
+        }
+
+        //prepare children if it is not char and INIT:
+        {
+            let mut pnode: &mut PNode;
+            let mut node = arena.index_mut(id);
+            pnode = &mut node.data;
+            pnode2 = pnode.clone();
+            println!("children for..{:?}", pnode.rulename);
+            //let state = &mut pnode.state;
+
+            //get children rule names
+            match pnode.state {
+                StateType::Init => {
+                    //prepare children nodes
+                    let rule: &ParsingRule = &parser_rules.rule_vec
+                        [*parser_rules.rule_registry.get(&pnode.rulename).unwrap()];
+
+                    match rule.rule_type {
+                        RuleType::Chars | RuleType::CharsNot | RuleType::CharSequence => {}
+                        _ => {
+                            children_names = rule.children_names.clone();
+                        }
+                    }
+                }
+                _ => {}
+            };
+
+            //mystr.push('a');
+            //mystr.clear();
+            //mystr.push_str("aa"); // =  &mut "zaa".to_owned();
+        }
+
+        let rule2: &ParsingRule =
+            &parser_rules.rule_vec[*parser_rules.rule_registry.get(&pnode2.rulename).unwrap()];
+
+        //init children?
+       
+        if pnode2.state == StateType::Init {
+            {
+                //println!("CN{:?}", children_names);
+                for rulename in children_names.iter() {
+                    let node = PNode {
+                        rulename: rulename.clone(),
+                        state: StateType::Init,
+                        current_sequence: 0,
+                    };
+
+                    // Add some new nodes to the arena
+                    let cid = arena.new_node(node);
+                    id.append(cid, arena);
+                }
+            }
+
+
+        }
+
+        //get children
+ let mut vec = Vec::new();
+            {
+                let iter = id.children(&arena);
+                for cid in iter {
+                    vec.push(cid);
+                }
+            }
+
+        //new char children rule nodes
+        //only first if this is sequence?
+
+        let children_count:usize = vec.len();
+        match rule2.rule_type {
+            RuleType::Sequence => for (i, cid) in vec.into_iter().enumerate() {
+                println!("i:{:?} , current_seq:{:?}", i, pnode2.current_sequence);
+                
+                {
+                let mut pnode = &mut arena.index_mut(id).data;
+                if pnode.current_sequence > i {
+                    continue;
+                }
+                }
+                let result : (StateType , bool);
+                {
+                   
+                    result = PNode::new_char(parser_rules, cid, arena, c);
+                }
+                
+
+                if result.0 == StateType::Fail{
+                    {   let mut pnode = &mut arena.index_mut(id).data;
+                        pnode.state= StateType::Fail;
+                    }
+                    return (StateType::Fail,false);
+                }
+                //pass or wait... sure
+                // char moved?
+                if result.0 == StateType::Pass && result.1 == true{
+                    //this char is used.. children passed... if this is the last one congradulations!
+                    let curseq:usize;
+                   {  let mut pnode = &mut arena.index_mut(id).data;
+                    pnode.current_sequence += 1;
+                    curseq = pnode.current_sequence.clone();
+                   }
+                   if children_count<= curseq{ return (StateType::Pass, true) }else{
+
+                       {   let mut pnode = &mut arena.index_mut(id).data;
+                        pnode.state= StateType::Wait;
+                    }
+                       return (StateType::Wait,true);
+                   
+                   }
+                }
+                if result.0 == StateType::Wait && result.1 ==true{
+                    //children waits for another char, but this char is used.
+                    {   let mut pnode = &mut arena.index_mut(id).data;
+                        pnode.state= StateType::Wait;
+                    }
+                     return (StateType::Wait,true);
+                }
+                if result.0 == StateType::Pass && result.1 ==false{
+                    //go on loop you have 1 char to spend...
+                     let mut pnode = &mut arena.index_mut(id).data;
+                    pnode.current_sequence += 1;
+                }
+            },
+            RuleType::Optional => {
+                let cid = vec[0];
+                 let mut result : (StateType , bool);
+                {
+                    result = PNode::new_char(parser_rules, cid, arena, c);
+                }
+                if result.0 == StateType::Fail{
+                    result.0 = StateType::Pass;
+                }
+                {   let mut pnode = &mut arena.index_mut(id).data;
+                        pnode.state= result.0.clone();
+                    }
+                return (result.0, result.1 );
+
+            }
+            RuleType::Or => {
+
+                let mut shouldwait = false;
+                for (i, cid) in vec.into_iter().enumerate() {
+                    let child_state: StateType; 
+                    {   let mut pnode :&mut PNode = &mut arena.index_mut(cid).data;
+                        child_state = pnode.state.clone();
+                    }
+                    if(child_state==StateType::Fail){
+                        continue;
+                    }
+
+                    let result : (StateType , bool);
+                    {
+                        result = PNode::new_char(parser_rules, cid, arena, c);
+                    }
+                    //there is no optional and OR rule type, thus if it pass it moves char
+                    if result.0 == StateType::Pass{
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Pass;
+                        }
+                        return (StateType::Pass,true);
+                    }
+                    if result.0 == StateType::Wait{
+                        shouldwait=true;
+                         {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Pass;
+                        }
+                        
+                    }
+
+                }
+                if shouldwait{
+                    return (StateType::Wait,true);
+                }else{
+                    return (StateType::Fail,false);
+                }
+            }
+            RuleType::WithException => {}
+            RuleType::ZeroOrMore => {}
+            _ => {}
+        }
+        /*for (i, cid) in vec.into_iter().enumerate() {
+            println!("i:{:?} , current_seq:{:?}", i, pnode2.current_sequence);
+            if rule2.rule_type == RuleType::Sequence {
+                if pnode2.current_sequence != i {
+                    break;
+                }
+            }
+            //println!("{:?}", cid);
+
+            /* match rule.rule_type {
+                RuleType::Sequence => {
+                    PNode::new_char(parser_rules, cid, arena, c);
+                }
+                _ => {}
+            }*/
+            println!("new_char called");
+            PNode::new_char(parser_rules, cid, arena, c);
+        }*/
+
+
+        println!("NO BRANCH?");
+        (StateType::Fail, false)
     }
-}
 
-pub fn name(arg: String) -> () {
-    let mut node = Node {
-        parent: None,
-        children: Vec::new(),
-        data: "root".to_owned(),
-    };
-
-    node.children.push(1);
-
-    println!("{}", arg);
-}
-
-pub fn new_node(arena: &mut Arena, data:String) -> usize {
-    let mut node = Node {
-        parent: None,
-        children: Vec::new(),
-        data: data,
-    };
-
-    arena.nodes.push(node);
-    return 0;
-}
-
-pub fn get_node(arena: &mut Arena, id:usize) -> &mut Node {
-
-    return &mut arena.nodes[id];
-    
+    pub fn print(id: indextree::NodeId, arena: &Arena<PNode>, depth: usize) -> () {
+        
+        for n in id.children(arena) {
+            for x in 0..depth {
+                print!("-");
+            }
+            let pnode : &PNode = &arena.index(n).data;
+            println!("{:?}\tsta:{:?}\tseq:{:?}", pnode.rulename,pnode.state,pnode.current_sequence); //arena.index(n).data
+            PNode::print(n, arena, depth + 1);
+        }
+    }
 }

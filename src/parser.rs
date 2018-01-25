@@ -1,6 +1,7 @@
 
 use std::collections::HashMap;
 
+#[derive(PartialEq, Eq)]
 #[derive(Debug,Clone)]
 pub enum RuleType {
     Sequence,
@@ -20,11 +21,11 @@ pub struct Parser {
 #[derive(Clone,Debug)]
 pub struct ParsingRule {
     pub rule_name: String,
-    rule_type: RuleType,
-    children: Vec<usize>,
-    children_names: Vec<String>,
-    expected_char_ranges: Vec<(char, char)>,
-    expected_chars: Vec<char>,
+    pub rule_type: RuleType,
+    pub children: Vec<usize>,
+    pub children_names: Vec<String>,
+    pub expected_char_ranges: Vec<(char, char)>,
+    pub expected_chars: Vec<char>,
     is_chunkable: bool,
 }
 
