@@ -291,11 +291,12 @@ impl PNode {
                         result = PNode::new_char(parser_rules, cid, arena, c);
                     }
                     //there is no optional and OR rule type, thus if it pass it moves char
+                    //just pass what comes...
                     if result.0 == StateType::Pass{
                         {   let mut pnode = &mut arena.index_mut(id).data;
                             pnode.state= StateType::Pass;
                         }
-                        return (StateType::Pass,true);
+                        return (StateType::Pass,result.1);
                     }
                     if result.0 == StateType::Wait{
                         shouldwait=true;
@@ -356,7 +357,7 @@ impl PNode {
     pub fn print(id: indextree::NodeId, arena: &Arena<PNode>, depth: usize) -> () {
         
         let pnode : &PNode = &arena.index(id).data;
-        if pnode.state == StateType::Wait ||pnode.state==StateType::Pass{
+        if pnode.state == StateType::Wait {
         for n in id.children(arena) {
             for x in 0..depth {
                 print!("-");

@@ -44,7 +44,7 @@ fn tidy_parser() {
 
 #[test]
 fn new_parser() {
-    let mut f: File = match File::open("tests/xml_files/mini.xml") {
+    let mut f: File = match File::open("tests/xml_files/mini.2.xml") {
         Ok(file) => file,
         Err(e) => {
             println!("{}", e);

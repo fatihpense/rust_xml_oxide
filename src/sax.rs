@@ -390,9 +390,9 @@ let node=  PNode{    rulename: "document".to_owned(),
                 PNode::print(a, arena,0);
                 //node.new_char(&mut arena, ch.unwrap());
                
-               if i==5{
+               /*if i==5{
                break;
-               }
+               }*/
                
             } else {
 
