@@ -35,10 +35,15 @@ impl xml_sax::ContentHandler for MySaxHandler {
     fn offset(&mut self, offset: usize) {}
 }
 
+#[test]
+fn tidy_parser() {
+    xml_oxide::parsertidy::get();
+
+    assert_eq!(true, true);
+}
 
 #[test]
 fn new_parser() {
-
     let mut f: File = match File::open("tests/xml_files/mini.xml") {
         Ok(file) => file,
         Err(e) => {
@@ -48,12 +53,14 @@ fn new_parser() {
     };
     let mut reader = BufReader::new(f);
 
-    let mut my_sax_handler = MySaxHandler { attributes_string: String::new() };
+    let mut my_sax_handler = MySaxHandler {
+        attributes_string: String::new(),
+    };
     {
         let mut sax_parser = SaxParser::new();
         sax_parser.set_content_handler(&mut my_sax_handler);
         sax_parser.parse2(&mut reader);
     }
-    
+
     assert_eq!(true, true);
 }

@@ -19,6 +19,7 @@ pub enum StateType {
 #[derive(Clone, Debug)]
 pub struct PNode {
     pub rulename: String,
+    pub ruletype: RuleType,
     //pub children: Vec<Node>,
     pub state: StateType,
     pub current_sequence: usize, //pub data: String
@@ -127,6 +128,7 @@ impl PNode {
                         [*parser_rules.rule_registry.get(&pnode.rulename).unwrap()];
 
                     match rule.rule_type {
+                        //this dont have children:
                         RuleType::Chars | RuleType::CharsNot | RuleType::CharSequence => {}
                         _ => {
                             children_names = rule.children_names.clone();
@@ -148,17 +150,24 @@ impl PNode {
        
         if pnode2.state == StateType::Init {
             {
-                //println!("CN{:?}", children_names);
-                for rulename in children_names.iter() {
-                    let node = PNode {
-                        rulename: rulename.clone(),
-                        state: StateType::Init,
-                        current_sequence: 0,
-                    };
+                 let rule: &ParsingRule = &parser_rules.rule_vec
+                        [*parser_rules.rule_registry.get(&pnode2.rulename).unwrap()];
 
-                    // Add some new nodes to the arena
-                    let cid = arena.new_node(node);
-                    id.append(cid, arena);
+                    //println!("CN{:?}", children_names);
+                    for rulename in children_names.iter() {
+                        let rule: &ParsingRule = &parser_rules.rule_vec
+                        [*parser_rules.rule_registry.get(rulename).unwrap()];
+                        let node = PNode {
+                            rulename: rulename.clone(),
+                            ruletype: rule.rule_type.clone(),
+                            state: StateType::Init,
+                            current_sequence: 0,
+                        };
+
+                        // Add some new nodes to the arena
+                        let cid = arena.new_node(node);
+                        id.append(cid, arena);
+                    
                 }
             }
 
@@ -166,7 +175,7 @@ impl PNode {
         }
 
         //get children
- let mut vec = Vec::new();
+        let mut vec = Vec::new();
             {
                 let iter = id.children(&arena);
                 for cid in iter {
@@ -179,7 +188,8 @@ impl PNode {
 
         let children_count:usize = vec.len();
         match rule2.rule_type {
-            RuleType::Sequence => for (i, cid) in vec.into_iter().enumerate() {
+            RuleType::Sequence => {
+                for (i, cid) in vec.into_iter().enumerate() {
                 println!("i:{:?} , current_seq:{:?}", i, pnode2.current_sequence);
                 
                 {
@@ -190,7 +200,7 @@ impl PNode {
                 }
                 let result : (StateType , bool);
                 {
-                   
+                   //TEST current sequence children:
                     result = PNode::new_char(parser_rules, cid, arena, c);
                 }
                 
@@ -204,18 +214,25 @@ impl PNode {
                 //pass or wait... sure
                 // char moved?
                 if result.0 == StateType::Pass && result.1 == true{
-                    //this char is used.. children passed... if this is the last one congradulations!
+                    //this char is used.. children passed... if this is the last one congratulations!
                     let curseq:usize;
                    {  let mut pnode = &mut arena.index_mut(id).data;
                     pnode.current_sequence += 1;
                     curseq = pnode.current_sequence.clone();
                    }
-                   if children_count<= curseq{ return (StateType::Pass, true) }else{
+                   if children_count<= curseq{ 
+                       {  let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Pass;
+                    
+                         }
+                       return (StateType::Pass, true) 
+                   
+                   }else{
 
                        {   let mut pnode = &mut arena.index_mut(id).data;
                         pnode.state= StateType::Wait;
-                    }
-                       return (StateType::Wait,true);
+                        }
+                        return (StateType::Wait,true);
                    
                    }
                 }
@@ -230,9 +247,18 @@ impl PNode {
                     //go on loop you have 1 char to spend...
                      let mut pnode = &mut arena.index_mut(id).data;
                     pnode.current_sequence += 1;
+
+                    //if this is the last one dont go on loop
+                     if children_count<= pnode.current_sequence{ 
+                         pnode.state= StateType::Pass;
+                       return (StateType::Pass, false) 
+                       }
                 }
+                } //end for loop
+                
             },
             RuleType::Optional => {
+                //not used!
                 let cid = vec[0];
                  let mut result : (StateType , bool);
                 {
@@ -250,6 +276,7 @@ impl PNode {
             RuleType::Or => {
 
                 let mut shouldwait = false;
+                let children_count = vec.len();
                 for (i, cid) in vec.into_iter().enumerate() {
                     let child_state: StateType; 
                     {   let mut pnode :&mut PNode = &mut arena.index_mut(cid).data;
@@ -273,7 +300,7 @@ impl PNode {
                     if result.0 == StateType::Wait{
                         shouldwait=true;
                          {   let mut pnode = &mut arena.index_mut(id).data;
-                            pnode.state= StateType::Pass;
+                            pnode.state= StateType::Wait;
                         }
                         
                     }
@@ -282,9 +309,14 @@ impl PNode {
                 if shouldwait{
                     return (StateType::Wait,true);
                 }else{
+                    //if or has one child it should pass
+                    if children_count<=1{
+                        return  (StateType::Pass,false)
+                    }
                     return (StateType::Fail,false);
                 }
             }
+            
             RuleType::WithException => {}
             RuleType::ZeroOrMore => {}
             _ => {}
@@ -310,18 +342,29 @@ impl PNode {
 
 
         println!("NO BRANCH?");
+         {
+            let mut pnode: &mut PNode;
+            let mut node = arena.index_mut(id);
+            pnode = &mut node.data;
+            println!("{:?} typ:{:?} sta:{:?}", pnode.rulename,pnode.ruletype,pnode.state);
+        }
+        
+        println!("//NO BRANCH?");
         (StateType::Fail, false)
     }
 
     pub fn print(id: indextree::NodeId, arena: &Arena<PNode>, depth: usize) -> () {
         
+        let pnode : &PNode = &arena.index(id).data;
+        if pnode.state == StateType::Wait ||pnode.state==StateType::Pass{
         for n in id.children(arena) {
             for x in 0..depth {
                 print!("-");
             }
             let pnode : &PNode = &arena.index(n).data;
-            println!("{:?}\tsta:{:?}\tseq:{:?}", pnode.rulename,pnode.state,pnode.current_sequence); //arena.index(n).data
+            println!("{:?}|sta:{:?}|seq:{:?}|typ:{:?}", pnode.rulename,pnode.state,pnode.current_sequence,pnode.ruletype); //arena.index(n).data
             PNode::print(n, arena, depth + 1);
+        }
         }
     }
 }

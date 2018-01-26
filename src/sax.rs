@@ -2,6 +2,7 @@
 use parser::ParsingPassLogStream;
 use parser::parse_with_rule;
 use parser::prepare_rules;
+use parsertidy;
 
 use std::io::Read;
 use std::collections::HashMap;
@@ -354,7 +355,9 @@ impl<'a> SaxParser<'a> {
 
 
 
-        let parser_rules = prepare_rules();
+        let mut parser_rules = prepare_rules();
+        parsertidy::remove_optional(&mut parser_rules);
+        parsertidy::remove_zeroormore(&mut parser_rules);
         let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
 
 
@@ -366,6 +369,7 @@ impl<'a> SaxParser<'a> {
 
 let node=  PNode{    rulename: "document".to_owned(),
                     state: StateType::Init,
+                    ruletype : rule.rule_type.clone(),
                     current_sequence: 0};
 
     // Add some new nodes to the arena
@@ -378,10 +382,15 @@ let node=  PNode{    rulename: "document".to_owned(),
                 println!("" );
                 PNode::new_char(&parser_rules,a, arena, ch.unwrap());
                 println!("PRINTING");
+
+               {
+                    let pnode : &PNode = &arena.index(a).data;
+                     println!("{:?}|sta:{:?}|seq:{:?}|typ:{:?}", pnode.rulename,pnode.state,pnode.current_sequence,pnode.ruletype); //arena.index(n).data
+               }
                 PNode::print(a, arena,0);
                 //node.new_char(&mut arena, ch.unwrap());
                
-               if i==1{
+               if i==5{
                break;
                }
                

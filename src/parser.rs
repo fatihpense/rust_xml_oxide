@@ -30,7 +30,7 @@ pub struct ParsingRule {
 }
 
 impl ParsingRule {
-    fn new(rule_name: String, rule_type: RuleType) -> ParsingRule {
+    pub fn new(rule_name: String, rule_type: RuleType) -> ParsingRule {
         ParsingRule {
             rule_name: rule_name,
             rule_type: rule_type,
