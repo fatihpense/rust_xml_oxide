@@ -18,6 +18,9 @@ use indextree::Arena;
 use std::ops::Index;
 use std::ops::IndexMut;
 
+use itertools;
+
+
 pub struct SaxParser<'a> {
     content_handler: Option<&'a mut ContentHandler>,
     counter: i64,
@@ -354,7 +357,6 @@ impl<'a> SaxParser<'a> {
      pub fn parse2<R: Read>(mut self, read: R) {
 
 
-
         let mut parser_rules = prepare_rules();
         parsertidy::remove_optional(&mut parser_rules);
         parsertidy::remove_zeroormore(&mut parser_rules);
@@ -362,8 +364,11 @@ impl<'a> SaxParser<'a> {
 
 
         //let mut chars: Vec<char> = Vec::new();
-        let citer = char_iter::chars(read);
 
+        let mut citer  = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
+{
+    &citer.peek();
+}
  let mut arena = &mut Arena::new();
 
 
@@ -374,14 +379,35 @@ let node=  PNode{    rulename: "document".to_owned(),
 
     // Add some new nodes to the arena
     let a = arena.new_node(node);
+let mut index = 0;
+loop {
+    match citer.next() {
+        Some(ch) => {
+            if ch.is_ok(){
+                PNode::new_char(&parser_rules,a, arena, ch.unwrap(),&citer);
+                println!("PRINTING{:?}",index);
 
+               {
+                    let pnode : &PNode = &arena.index(a).data;
+                     println!("{:?}|sta:{:?}|seq:{:?}|typ:{:?}", pnode.rulename,pnode.state,pnode.current_sequence,pnode.ruletype); //arena.index(n).data
+               }
+                PNode::print(a, arena,0);
+            }else{
+                break;
+            }
+        },
+        None => { break }
+    }
+    index +=1;
+}
+/*
         for (i,ch) in citer.enumerate() {
 
             if ch.is_ok() {
 //parse with state char by char
                 println!("" );
                 PNode::new_char(&parser_rules,a, arena, ch.unwrap());
-                println!("PRINTING");
+                println!("PRINTING,{:?}",i);
 
                {
                     let pnode : &PNode = &arena.index(a).data;
@@ -400,7 +426,7 @@ let node=  PNode{    rulename: "document".to_owned(),
             }
         }
          //PNode::print(a, arena);
-
+*/
      }
  
 }

@@ -4,14 +4,16 @@ use std::collections::HashMap;
 #[derive(PartialEq, Eq)]
 #[derive(Debug,Clone)]
 pub enum RuleType {
+    And, //new parser specific
+    Not, //new parser specific
     Sequence,
     Or,
-    ZeroOrMore,
     Chars, // directly chars
     CharSequence, // easy char sequence for <!-- cdata etc. TODO
     CharsNot,
-    WithException,
-    Optional,
+    ZeroOrMore, //new parser delete
+    WithException, //new parser delete
+    Optional, //new parser delete
 }
 
 pub struct Parser {
@@ -458,7 +460,7 @@ pub fn prepare_rules<'a>() -> Parser {
     // TODO spec incomplete
     let mut element_notempty = ParsingRule::new("STag content ETag".to_owned(), RuleType::Sequence);
     element_notempty.children_names.push("STag".to_owned());
-    element_notempty.children_names.push("content".to_owned());
+    element_notempty.children_names.push("content?".to_owned());
     element_notempty.children_names.push("ETag".to_owned());
 
     rule_nameRegistry.insert(element_notempty.rule_name.clone(), element_notempty);
@@ -554,6 +556,10 @@ pub fn prepare_rules<'a>() -> Parser {
     content.children_names.push("CharData?".to_owned());
     content.children_names.push("(content_inside CharData?)*".to_owned());
     rule_nameRegistry.insert(content.rule_name.clone(), content);
+
+    let mut content2 = ParsingRule::new("content?".to_owned(), RuleType::Optional);
+    content2.children_names.push("content".to_owned());
+    rule_nameRegistry.insert(content2.rule_name.clone(), content2);
 
     // [44] EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
 
@@ -1082,10 +1088,10 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
 
         }
         // unreachable
-        //        _ => {
-        // println!("UNIMPLEMENTED PARSER FOR TYPE!".to_owned() );
-        //
-        // ParsingResult::Fail
-        // }
+          _ => {
+         println!("UNIMPLEMENTED PARSER FOR TYPE!" );
+         return (logger, ParsingResult::Fail);
+         
+         }
     }
 }

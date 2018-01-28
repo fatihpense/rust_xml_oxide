@@ -7,7 +7,8 @@ pub fn get() {
     //let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
     remove_optional(&mut parser_rules);
     remove_zeroormore(&mut parser_rules);
-    print_rules(&parser_rules, "Name".to_owned(), 0);
+    remove_withexception(&mut parser_rules);
+    print_rules(&parser_rules, "content".to_owned(), 0);
 }
 
 pub fn remove_optional(parser: &mut Parser) {
@@ -116,9 +117,10 @@ pub fn remove_zeroormore(parser: &mut Parser) {
                         &parser_rule_vec_2[*parser.rule_registry.get(rulenamec).unwrap()];
                     if rulec.rule_type == RuleType::ZeroOrMore {
                         index = i;
-                        zom_rule_name = "zomgen".to_owned() + &rule_id.to_string();
+                        
                         rule_id += 1;
                         zom_orig_child_rule_name = rulec.children_names[0].clone();
+                        zom_rule_name = zom_orig_child_rule_name.clone()+ "-zomgen" + &rule_id.to_string();
                         break;
                     }
                 }
@@ -144,7 +146,7 @@ pub fn remove_zeroormore(parser: &mut Parser) {
         zom.children_names.push(seq1_name.clone());
 
 
-        
+
         //child 1
         let mut seq1 = ParsingRule::new(seq1_name.clone(), RuleType::Sequence);
         //zom original and new zom "OR" rule
@@ -152,7 +154,7 @@ pub fn remove_zeroormore(parser: &mut Parser) {
         seq1.children_names.push(zom_name.clone());
         rule_name_registry_queue.insert(seq1_name, seq1);
 
-//dont create empty sequence
+        //dont create empty sequence
         if zom_child.len() > 0 {
             let seq2_name = zom_name.clone() + "-seq2";
             zom.children_names.push(seq2_name.clone());
@@ -229,6 +231,17 @@ pub fn change_zom_rule_rec(
     );
 
     zom_queue.insert(zom_gen_rule_name, (zom_orig_child_name, zom_children));
+}
+
+
+pub fn remove_withexception(parser: &mut Parser) {
+    for rule in parser.rule_vec.iter_mut() {
+        let rule: &mut ParsingRule = rule;
+        if rule.rule_type == RuleType::WithException {
+            rule.rule_type = RuleType::Or;
+            rule.children_names.split_off(1);
+        }
+    }
 }
 
 pub fn print_rules(parser: &Parser, rule_name: String, depth: usize) {

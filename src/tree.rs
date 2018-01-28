@@ -1,3 +1,4 @@
+use std::io::Read;
 use parser::ParsingRule;
 use indextree::Arena;
 use indextree;
@@ -5,6 +6,9 @@ use std::ops::IndexMut;
 use std::ops::Index;
 use parser::Parser;
 use parser::RuleType;
+
+use itertools;
+use char_iter;
 //https://rust-leipzig.github.io/architecture/2016/12/20/idiomatic-trees-in-rust/
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,11 +30,13 @@ pub struct PNode {
 }
 
 impl PNode {
-    pub fn new_char(
+    pub fn new_char<R:Read>(
         parser_rules: &Parser,
         id: indextree::NodeId,
         arena: &mut Arena<PNode>,
         c: char,
+        iter: & itertools::MultiPeek<char_iter::Chars<R>>
+
     ) -> (StateType, bool) {
         let mut children_names: Vec<String> = Vec::new();
         let mut pnode2: PNode;
@@ -41,7 +47,7 @@ impl PNode {
             let mut node = arena.index_mut(id);
             pnode = &mut node.data;
             pnode2 = pnode.clone();
-            println!("starting..{:?}", pnode.rulename);
+            //println!("starting..{:?}", pnode.rulename);
             //let state = &mut pnode.state;
             let rule: &ParsingRule =
                 &parser_rules.rule_vec[*parser_rules.rule_registry.get(&pnode.rulename).unwrap()];
@@ -52,7 +58,7 @@ impl PNode {
                     for range in &rule.expected_char_ranges {
                         if range.0 <= c && c <= range.1 {
                             //TODO logger pass?
-                            println!("PASS");
+                            //println!("PASS");
                             pnode.state = StateType::Pass;
                             return (StateType::Pass, true);
                         }
@@ -60,7 +66,7 @@ impl PNode {
                     for check_char in &rule.expected_chars {
                         if *check_char == c {
                             //TODO logger pass?
-                            println!("PASS");
+                            //println!("PASS");
                             pnode.state = StateType::Pass;
                             return (StateType::Pass, true);
                         }
@@ -86,14 +92,14 @@ impl PNode {
                 }
                 RuleType::CharSequence => {
                     let c2 = &rule.expected_chars[pnode.current_sequence];
-                    println!("CharSequence: {:?} =? {:?}", c,c2 );
+                    //println!("CharSequence: {:?} =? {:?}", c,c2 );
                     if c == *c2 {
                         pnode.current_sequence += 1;
                         if pnode.current_sequence >= rule.expected_chars.len() {
                             pnode.state = StateType::Pass;
                             return (StateType::Pass, true);
                         } else {
-                             println!("AHOYY" );
+                             //println!("AHOYY" );
                              pnode.state = StateType::Wait;
                             return (StateType::Wait, true);
                         }
@@ -117,7 +123,7 @@ impl PNode {
             let mut node = arena.index_mut(id);
             pnode = &mut node.data;
             pnode2 = pnode.clone();
-            println!("children for..{:?}", pnode.rulename);
+            //println!("children for..{:?}", pnode.rulename);
             //let state = &mut pnode.state;
 
             //get children rule names
@@ -190,7 +196,7 @@ impl PNode {
         match rule2.rule_type {
             RuleType::Sequence => {
                 for (i, cid) in vec.into_iter().enumerate() {
-                println!("i:{:?} , current_seq:{:?}", i, pnode2.current_sequence);
+                //println!("i:{:?} , current_seq:{:?}", i, pnode2.current_sequence);
                 
                 {
                 let mut pnode = &mut arena.index_mut(id).data;
@@ -201,7 +207,7 @@ impl PNode {
                 let result : (StateType , bool);
                 {
                    //TEST current sequence children:
-                    result = PNode::new_char(parser_rules, cid, arena, c);
+                    result = PNode::new_char(parser_rules, cid, arena, c,iter);
                 }
                 
 
@@ -262,7 +268,7 @@ impl PNode {
                 let cid = vec[0];
                  let mut result : (StateType , bool);
                 {
-                    result = PNode::new_char(parser_rules, cid, arena, c);
+                    result = PNode::new_char(parser_rules, cid, arena, c,iter);
                 }
                 if result.0 == StateType::Fail{
                     result.0 = StateType::Pass;
@@ -288,9 +294,9 @@ impl PNode {
 
                     let result : (StateType , bool);
                     {
-                        result = PNode::new_char(parser_rules, cid, arena, c);
+                        result = PNode::new_char(parser_rules, cid, arena, c,iter);
                     }
-                    //there is no optional and OR rule type, thus if it pass it moves char
+                    //there is no optional and OR rule type, thus if it pass it moves char?
                     //just pass what comes...
                     if result.0 == StateType::Pass{
                         {   let mut pnode = &mut arena.index_mut(id).data;
@@ -310,15 +316,77 @@ impl PNode {
                 if shouldwait{
                     return (StateType::Wait,true);
                 }else{
-                    //if or has one child it should pass
+                    //if or has one child it should pass?
+                    //what if it waited&used char and then it passes without using char?
+                    //TODO
                     if children_count<=1{
                         return  (StateType::Pass,false)
+                    }
+                    {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Fail;
                     }
                     return (StateType::Fail,false);
                 }
             }
-            
-            RuleType::WithException => {}
+            RuleType::Not => {
+                    let cid = vec[0];
+                    let result : (StateType , bool);
+                    {
+                        result = PNode::new_char(parser_rules, cid, arena, c,iter);
+                    }
+                    if result.0 == StateType::Pass{
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Fail;
+                        }
+                        return (StateType::Fail,result.1);
+                    }
+                    if result.0 == StateType::Wait{
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Wait;
+                        }
+                        return (StateType::Wait,result.1);
+                    }
+                    if result.0 == StateType::Fail{
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Pass;
+                        }
+                        return (StateType::Pass,result.1);
+                    }
+            }
+            RuleType::And => {
+
+                let mut child_states: Vec<StateType> = Vec::new();
+                let mut child_moves: Vec<bool> = Vec::new();
+                for (i, cid) in vec.into_iter().enumerate() {
+
+                    let result : (StateType , bool);
+                    {
+                        result = PNode::new_char(parser_rules, cid, arena, c,iter);
+                    }
+                    //if one fails fail.
+                    if result.0 == StateType::Fail{
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                            pnode.state= StateType::Fail;
+                        }
+                        return (StateType::Fail,result.1);
+                    }
+                    child_states.push(result.0);
+                    child_moves.push(result.1);
+
+                }
+                let state_one = child_states[0].clone();
+                let move_one = child_moves[0].clone();
+                for state in child_states.iter(){
+                    if state_one != *state{
+                        return (StateType::Fail,false);
+                    }
+                }
+                //wait or pass with move char of first child
+                return (state_one,move_one);
+            }
+            RuleType::WithException => {
+                println!("WiEx NOT SUPPORTED!");
+            }
             RuleType::ZeroOrMore => {}
             _ => {}
         }

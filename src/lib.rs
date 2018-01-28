@@ -1,5 +1,7 @@
 extern crate xml_sax;
 extern crate indextree;
+#[macro_use] extern crate itertools;
+
 
 pub mod parser;
 pub mod sax;
