@@ -23,11 +23,13 @@ pub fn remove_optional(parser: &mut Parser) {
         if rule.rule_type == RuleType::Sequence {
             //check if it contains optional?
             let mut containsoptional = false;
+            let mut optionals_str:String ="".to_owned();
             for child_rule_name in &rule.children_names {
                 let crule: &ParsingRule =
                     &parser_rule_vec_2[*parser.rule_registry.get(child_rule_name).unwrap()];
                 if crule.rule_type == RuleType::Optional {
                     containsoptional = true;
+                    optionals_str = optionals_str +"+"+ &crule.rule_name.clone();
                 }
             }
             if containsoptional {
@@ -57,7 +59,7 @@ pub fn remove_optional(parser: &mut Parser) {
                 for vecih in child_vec.iter_mut() {
                     //create one sequence rule for each new-children
                     let mut child = ParsingRule::new(
-                        "option_child_rule_".to_owned() + &rule_id.to_string(),
+                        "option_child_".to_owned() + &optionals_str + &rule_id.to_string(),
                         RuleType::Sequence,
                     );
                     rule_id += 1;
@@ -235,13 +237,13 @@ pub fn change_zom_rule_rec(
 
 
 pub fn remove_withexception(parser: &mut Parser) {
-    for rule in parser.rule_vec.iter_mut() {
+    /*for rule in parser.rule_vec.iter_mut() {
         let rule: &mut ParsingRule = rule;
         if rule.rule_type == RuleType::WithException {
             rule.rule_type = RuleType::Or;
             rule.children_names.split_off(1);
         }
-    }
+    }*/
 }
 
 pub fn print_rules(parser: &Parser, rule_name: String, depth: usize) {

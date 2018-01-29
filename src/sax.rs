@@ -1,6 +1,7 @@
 
 use parser::ParsingPassLogStream;
 use parser::parse_with_rule;
+use parser::parse_with_rule2;
 use parser::prepare_rules;
 use parsertidy;
 
@@ -128,7 +129,7 @@ impl Attributes {
 
 impl<'a> ParsingPassLogStream for SaxParser<'a> {
     fn try(&mut self, rulename: String, starting_pos: usize) -> () {
-
+//println!("try rule: {:?}",rulename );
         if rulename == "STag" || rulename == "EmptyElemTag" {
             self.element_names.clear();
             self.attribute_values.clear();
@@ -139,14 +140,19 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
     fn pass(&mut self,
             rulename: String,
             chars: &Vec<char>,
-            starting_pos: usize,
-            ending_pos: usize)
+            mut starting_pos: usize,
+            mut ending_pos: usize)
             -> () {
-
+//println!("pass rule: {:?}, {:?},{:?}",rulename,starting_pos,ending_pos );
 
         if starting_pos > ending_pos || ending_pos == 0 {
             return;
         }
+
+        //normalize for parser3
+        ending_pos=ending_pos-starting_pos;
+        starting_pos= 0;
+
         if rulename == "Name" {
             let s: String = chars[starting_pos..ending_pos]
                 .into_iter()
@@ -384,7 +390,7 @@ loop {
     match citer.next() {
         Some(ch) => {
             if ch.is_ok(){
-                PNode::new_char(&parser_rules,a, arena, ch.unwrap(),&citer);
+                PNode::new_char(&parser_rules,a, arena, ch.unwrap(),&mut citer);
                 println!("PRINTING{:?}",index);
 
                {
@@ -429,4 +435,39 @@ loop {
 */
      }
  
+ pub fn parse3<R: Read>(mut self, read: R) {
+
+
+    let mut parser_rules = prepare_rules();
+    //parsertidy::remove_optional(&mut parser_rules);
+    //parsertidy::remove_zeroormore(&mut parser_rules);
+    let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
+
+
+    //let mut chars: Vec<char> = Vec::new();
+
+    let mut citer  = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
+   /* {
+    &citer.peek();
+    }
+*/
+        let mut resume_vec = Vec::new();
+        let mut state_vec = Vec::new();
+     let result = parse_with_rule2(&parser_rules.rule_vec,
+                                                 &rule,
+                                                 &mut citer,
+                                                 //&Vec::new(),
+                                                 0,
+                                                 
+                                                 &mut resume_vec,
+                                                 &mut state_vec,
+                                                 self);
+    println!("result:{:?}",result.1 );
+
+ }
+
+ 
 }
+
+
+ 

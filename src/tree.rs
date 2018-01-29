@@ -35,11 +35,28 @@ impl PNode {
         id: indextree::NodeId,
         arena: &mut Arena<PNode>,
         c: char,
-        iter: & itertools::MultiPeek<char_iter::Chars<R>>
+        iter: &mut itertools::MultiPeek<char_iter::Chars<R>>
 
     ) -> (StateType, bool) {
         let mut children_names: Vec<String> = Vec::new();
         let mut pnode2: PNode;
+
+
+        {
+            let mut pnode: &mut PNode;
+            let mut node = arena.index_mut(id);
+            pnode = &mut node.data;
+            pnode2 = pnode.clone();
+            //println!("children for..{:?}", pnode.rulename);
+            //let state = &mut pnode.state;
+
+            //get children rule names
+            if pnode.state ==StateType::Fail{
+                return (StateType::Fail, false);
+            }else if pnode.state == StateType::Pass{
+                return (StateType::Pass,false);
+            }
+        }
 
         //HANDLE IF ITS CHAR RELATED
         {
@@ -47,7 +64,7 @@ impl PNode {
             let mut node = arena.index_mut(id);
             pnode = &mut node.data;
             pnode2 = pnode.clone();
-            //println!("starting..{:?}", pnode.rulename);
+            println!("starting..{:?}", pnode.rulename);
             //let state = &mut pnode.state;
             let rule: &ParsingRule =
                 &parser_rules.rule_vec[*parser_rules.rule_registry.get(&pnode.rulename).unwrap()];
@@ -153,7 +170,7 @@ impl PNode {
             &parser_rules.rule_vec[*parser_rules.rule_registry.get(&pnode2.rulename).unwrap()];
 
         //init children?
-       
+       println!("children:{:?}",children_names);
         if pnode2.state == StateType::Init {
             {
                  let rule: &ParsingRule = &parser_rules.rule_vec
@@ -177,7 +194,7 @@ impl PNode {
                 }
             }
 
-
+        
         }
 
         //get children
@@ -282,6 +299,9 @@ impl PNode {
             RuleType::Or => {
 
                 let mut shouldwait = false;
+                let mut pass_count = 0;
+                let mut pass_char_moved= false;
+
                 let children_count = vec.len();
                 for (i, cid) in vec.into_iter().enumerate() {
                     let child_state: StateType; 
@@ -302,7 +322,11 @@ impl PNode {
                         {   let mut pnode = &mut arena.index_mut(id).data;
                             pnode.state= StateType::Pass;
                         }
-                        return (StateType::Pass,result.1);
+                        //if one pass and other waits OR rule should wait?
+                        //BACKTRACING requires only 1 pass... 
+                        //return (StateType::Pass,result.1);
+                        pass_count += 1;
+                        pass_char_moved =result.1;
                     }
                     if result.0 == StateType::Wait{
                         shouldwait=true;
@@ -315,13 +339,26 @@ impl PNode {
                 }
                 if shouldwait{
                     return (StateType::Wait,true);
+                }else if pass_count>0{
+                    if pass_count==1 {
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                                pnode.state= StateType::Pass;
+                        }
+                        return (StateType::Pass,pass_char_moved);
+                    }else{
+                        //wait 
+                        {   let mut pnode = &mut arena.index_mut(id).data;
+                                pnode.state= StateType::Wait;
+                        }
+                        return (StateType::Wait,true);
+                    }
                 }else{
                     //if or has one child it should pass?
                     //what if it waited&used char and then it passes without using char?
                     //TODO
-                    if children_count<=1{
-                        return  (StateType::Pass,false)
-                    }
+                    //if children_count<=1{
+                    //    return  (StateType::Pass,false)
+                    //}
                     {   let mut pnode = &mut arena.index_mut(id).data;
                             pnode.state= StateType::Fail;
                     }
@@ -385,7 +422,53 @@ impl PNode {
                 return (state_one,move_one);
             }
             RuleType::WithException => {
-                println!("WiEx NOT SUPPORTED!");
+                let child1 = vec[0];
+                let childex = vec[1];
+
+                    let result1 : (StateType , bool);
+                    {
+                        result1 = PNode::new_char(parser_rules, child1, arena, c,iter);
+                    }
+                    //return without peeking
+                    if result1.0 == StateType::Fail{
+                        return (StateType::Fail,false);
+                    }
+
+                    let mut cex = c;
+                    let mut resultex : (StateType , bool);
+                loop{
+                    
+                    {
+                        resultex = PNode::new_char(parser_rules, childex, arena, cex,iter);
+                    }
+                    if resultex.0 == StateType::Wait{
+                        
+                        {
+                            cex = iter.peek().map(|x| x.as_ref().map(|y| y.clone()) ).unwrap().unwrap();
+                        }
+                        println!("{:?}",cex );
+                        //iter.peek().as_ref().map(|x| **x).unwrap();
+                        //cex = iter.peek().as_ref().clone().unwrap().unwrap().clone();
+                        //cex = iter.peek().clone().unwrap().unwrap();
+                        continue;
+                    }else{
+                        break;
+                    }
+
+                }
+                if resultex.0 ==StateType::Fail{
+                    {   let mut pnode = &mut arena.index_mut(id).data;
+                         pnode.state= StateType::Pass;
+                    }
+                    return (StateType::Pass,true);
+                }else{
+                    {   let mut pnode = &mut arena.index_mut(id).data;
+                         pnode.state= StateType::Fail;
+                    }
+                    return (StateType::Fail,false);
+                }
+                 
+                println!("WiEx now SUPPORTED!");
             }
             RuleType::ZeroOrMore => {}
             _ => {}
@@ -425,7 +508,7 @@ impl PNode {
     pub fn print(id: indextree::NodeId, arena: &Arena<PNode>, depth: usize) -> () {
         
         let pnode : &PNode = &arena.index(id).data;
-        if pnode.state == StateType::Wait {
+        if pnode.state == StateType::Wait || pnode.state == StateType::Pass || pnode.state ==StateType::Init{
         for n in id.children(arena) {
             for x in 0..depth {
                 print!("-");
