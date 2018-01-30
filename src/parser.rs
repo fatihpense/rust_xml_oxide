@@ -463,7 +463,7 @@ pub fn prepare_rules<'a>() -> Parser {
     // TODO spec incomplete
     let mut element_notempty = ParsingRule::new("STag content ETag".to_owned(), RuleType::Sequence);
     element_notempty.children_names.push("STag".to_owned());
-    element_notempty.children_names.push("content?".to_owned());
+    element_notempty.children_names.push("content".to_owned());
     element_notempty.children_names.push("ETag".to_owned());
 
     rule_nameRegistry.insert(element_notempty.rule_name.clone(), element_notempty);
@@ -786,6 +786,7 @@ pub trait ParsingPassLogStream {
             starting_pos: usize,
             ending_pos: usize)
             -> ();
+    fn offset(&mut self, usize)->();
 }
 
 // state_vec (child_no,child starting pos,no backtrack required)
@@ -1106,12 +1107,15 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                                                 //char_vector: &Vec<char>,
                                                 starting_pos: usize,
                                                 // use where char vec is used
-                                                //offset: usize,
+                                                mut offset: usize,
                                                 // eof
                                                 resume_state_vec: &mut Vec<(usize, usize, bool)>,
                                                 state_vec: &mut Vec<(usize, usize, bool)>,
                                                 mut logger: T)
-                                                -> (T, ParsingResult) {
+                                                //offset+, logger, parsingresult
+                                                -> (usize,T, ParsingResult) {
+
+let mut offset_plus = 0;
 
     logger.try(rule.rule_name.clone(), starting_pos);
 
@@ -1121,30 +1125,30 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                 return (logger, ParsingResult::EOF);
             }*/
             //let c = char_vector[starting_pos ];
-            let c = peek_nth(iter, starting_pos);
+            let c = peek_nth(iter, starting_pos-offset);
 
             for range in &rule.expected_char_ranges {
 
 
                 if range.0 <= c && c <= range.1 {
                     logger.pass(rule.rule_name.clone(),
-                                &peek_collect_start_end(iter, starting_pos, starting_pos+1),
+                                &peek_collect_start_end(iter, starting_pos-offset, starting_pos+1-offset),
                                 starting_pos,
                                 starting_pos + 1);
-                    return (logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
+                    return (offset_plus,logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
                 }
             }
             for check_char in &rule.expected_chars {
                 if *check_char == c {
                     logger.pass(rule.rule_name.clone(),
-                                &peek_collect_start_end(iter, starting_pos, starting_pos+1),
+                                &peek_collect_start_end(iter, starting_pos-offset, starting_pos+1-offset),
                                 starting_pos,
                                 starting_pos + 1);
-                    return (logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
+                    return (offset_plus,logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
                 }
             }
 
-            (logger, ParsingResult::Fail)
+            (offset_plus,logger, ParsingResult::Fail)
         }
 
         RuleType::CharsNot => {
@@ -1152,22 +1156,22 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                 return (logger, ParsingResult::EOF);
             }*/
             //let c = char_vector[starting_pos ];
-            let c = peek_nth(iter, starting_pos);
+            let c = peek_nth(iter, starting_pos-offset);
             for range in &rule.expected_char_ranges {
                 if range.0 <= c && c <= range.1 {
-                    return (logger, ParsingResult::Fail);
+                    return (offset_plus,logger, ParsingResult::Fail);
                 }
             }
             for check_char in &rule.expected_chars {
                 if *check_char == c {
-                    return (logger, ParsingResult::Fail);
+                    return (offset_plus,logger, ParsingResult::Fail);
                 }
             }
             logger.pass(rule.rule_name.clone(),
-                        &peek_collect_start_end(iter, starting_pos, starting_pos+1),
+                        &peek_collect_start_end(iter, starting_pos-offset, starting_pos+1-offset),
                         starting_pos,
                         starting_pos + 1);
-            return (logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
+            return (offset_plus,logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
         }
 
         RuleType::CharSequence => {
@@ -1177,18 +1181,18 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                     return (logger, ParsingResult::EOF);
                 }*/
                 //let c = char_vector[new_starting_pos ];
-                let c = peek_nth(iter, new_starting_pos);
+                let c = peek_nth(iter, new_starting_pos-offset);
                 if *check_char == c {
                     new_starting_pos += 1;
                 } else {
-                    return (logger, ParsingResult::Fail);
+                    return (offset_plus,logger, ParsingResult::Fail);
                 }
             }
             logger.pass(rule.rule_name.clone(),
-                        &peek_collect_start_end(iter, starting_pos, new_starting_pos),
+                        &peek_collect_start_end(iter, starting_pos-offset, new_starting_pos-offset),
                         starting_pos,
                         new_starting_pos);
-            return (logger, ParsingResult::Pass(starting_pos, new_starting_pos));
+            return (offset_plus,logger, ParsingResult::Pass(starting_pos, new_starting_pos));
         }
         RuleType::ZeroOrMore => {
             let new_rule = &rule_vec[rule.children[0]];
@@ -1201,24 +1205,40 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                                              iter,
                                              //&char_vector,
                                              new_starting_pos,
-                                             
+                                             offset,
                                              resume_state_vec,
                                              state_vec,
                                              logger);
-                logger = result.0;
-                match result.1 {
+                //if(result.0;
+                
+
+                logger = result.1;
+                match result.2 {
                     ParsingResult::Fail => fail = true,
-                    ParsingResult::Pass(_, e_pos) => new_starting_pos = e_pos,
+                    ParsingResult::Pass(_, e_pos) => {
+                        offset_plus += result.0;
+                        offset += result.0;
+                        new_starting_pos = e_pos},
                     ParsingResult::EOF => {
-                        return (logger, ParsingResult::EOF);
+                        return (offset_plus,logger, ParsingResult::EOF);
                     }
                 }
             }
-            logger.pass(rule.rule_name.clone(),
-                        &peek_collect_start_end(iter, starting_pos, new_starting_pos),
-                        starting_pos,
-                        new_starting_pos);
-            return (logger, ParsingResult::Pass(starting_pos, new_starting_pos));
+
+            if starting_pos<=offset{
+                logger.pass(rule.rule_name.clone(),
+
+                &Vec::new(),
+                starting_pos,
+                new_starting_pos);
+            }else{
+                logger.pass(rule.rule_name.clone(),
+                    &peek_collect_start_end(iter, starting_pos-offset, new_starting_pos-offset),
+                    starting_pos,
+                    new_starting_pos);
+            }
+            
+            return (offset_plus,logger, ParsingResult::Pass(starting_pos, new_starting_pos));
         }
 
         RuleType::Sequence => {
@@ -1255,30 +1275,54 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                                               iter,
                                              //&char_vector,
                                              new_starting_pos,
-                                             
+                                             offset,
                                              resume_state_vec,
                                              state_vec,
                                              logger);
-                logger = result.0;
-                match result.1 {
+                
+                logger = result.1;
+                match result.2 {
                     ParsingResult::Fail => {
                         state_vec.pop();
-                        return (logger, ParsingResult::Fail);
+                        return (0,logger, ParsingResult::Fail);
                     }
-                    ParsingResult::Pass(_, e_pos) => new_starting_pos = e_pos,
+                    ParsingResult::Pass(_, e_pos) =>{ 
+                        offset_plus += result.0;
+                        offset += result.0;
+                        new_starting_pos = e_pos},
                     ParsingResult::EOF => {
                         // dont call state_vec.pop();
                         logger.pass(rule.rule_name.clone(), &Vec::new(), starting_pos, 0);
-                        return (logger, ParsingResult::EOF);
+                        return (0,logger, ParsingResult::EOF);
                     }
                 }
                 state_vec.pop();
             }
-            logger.pass(rule.rule_name.clone(),
-                         &peek_collect_start_end(iter, starting_pos, new_starting_pos),
-                        starting_pos,
-                        new_starting_pos);
-            return (logger, ParsingResult::Pass(starting_pos, new_starting_pos));
+
+
+            //println!("******{:?},{:?},{:?},{:?}",rule.rule_name.clone(),starting_pos,offset,new_starting_pos );
+            //deleting unnecessary chars causes this:
+            if starting_pos<offset{
+                logger.pass(rule.rule_name.clone(),
+
+                &Vec::new(),
+                starting_pos,
+                new_starting_pos);
+            }else{
+                logger.pass(rule.rule_name.clone(),
+
+                &peek_collect_start_end(iter, starting_pos-offset, new_starting_pos-offset),
+                starting_pos,
+                new_starting_pos);
+            }
+
+            if rule.rule_name == "STag" || rule.rule_name == "EmptyElemTag" || rule.rule_name == "ETag" {
+                offset_plus = new_starting_pos-offset;
+                //println!("offset_plus: {:?}",offset_plus );
+                remove_nth(iter, offset_plus);
+                 logger.offset(offset_plus);
+            }
+            return (offset_plus,logger, ParsingResult::Pass(starting_pos, new_starting_pos));
         }
 
         RuleType::Or => {
@@ -1305,28 +1349,38 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                                               iter,
                                              //&char_vector,
                                              rule_starting_pos,
-                                             
+                                             offset,
                                              resume_state_vec,
                                              state_vec,
                                              logger);
-                logger = result.0;
-                match result.1 {
+
+               
+                logger = result.1;
+                match result.2 {
 
                     ParsingResult::Pass(s_pos, e_pos) => {
-                        logger.pass(rule.rule_name.clone(),  &peek_collect_start_end(iter, s_pos, e_pos), s_pos, e_pos);
+                        offset_plus += result.0;
+                        offset += result.0;
+
+                        if s_pos<offset{
+                            logger.pass(rule.rule_name.clone(), &Vec::new(), s_pos, e_pos);           
+                        }else{
+                            logger.pass(rule.rule_name.clone(),  &peek_collect_start_end(iter, s_pos-offset, e_pos-offset), s_pos, e_pos);
+                        }
+
                         state_vec.pop();
-                        return (logger, result.1);
+                        return (offset_plus,logger, result.2);
                     }
                     ParsingResult::Fail => (),
                     ParsingResult::EOF => {
                         // dont call state_vec.pop();
                         // state_vec.pop();
-                        return (logger, ParsingResult::EOF);
+                        return (offset_plus,logger, ParsingResult::EOF);
                     }
                 }
                 state_vec.pop();
             }
-            return (logger, ParsingResult::Fail);
+            return (offset_plus,logger, ParsingResult::Fail);
         }
 
         RuleType::WithException => {
@@ -1340,39 +1394,39 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                                           iter,
                                          //&char_vector,
                                          starting_pos,
-                                         
+                                         offset,
                                          resume_state_vec,
                                          state_vec,
                                          logger);
-            match result.1 {
+            match result.2 {
                 ParsingResult::Pass(s_pos, e_pos) => {
                     let result2 = parse_with_rule2(rule_vec,
                                                   second_rule,
                                                    iter,
                                                   //&char_vector,
                                                   starting_pos,
-                                                  
+                                                  offset,
                                                   resume_state_vec,
                                                   state_vec,
-                                                  result.0);
-                    logger = result2.0;
-                    match result2.1 {
+                                                  result.1);
+                    logger = result2.1;
+                    match result2.2 {
                         ParsingResult::Fail => {
-                            logger.pass(rule.rule_name.clone(), &peek_collect_start_end(iter, s_pos, e_pos), s_pos, e_pos);
-                            return (logger, result.1);
+                            logger.pass(rule.rule_name.clone(), &peek_collect_start_end(iter, s_pos-offset, e_pos-offset), s_pos, e_pos);
+                            return (offset_plus,logger, result.2);
                         }
-                        ParsingResult::Pass(_, _) => return (logger, ParsingResult::Fail),
+                        ParsingResult::Pass(_, _) => return (0,logger, ParsingResult::Fail),
                         ParsingResult::EOF => {
 
-                            return (logger, ParsingResult::EOF);
+                            return (offset_plus,logger, ParsingResult::EOF);
                         }
                     }
 
                 }
-                ParsingResult::Fail => return (result.0, ParsingResult::Fail),
+                ParsingResult::Fail => return (offset_plus,result.1, ParsingResult::Fail),
                 ParsingResult::EOF => {
                     // dont call state_vec.pop();
-                    return (result.0, ParsingResult::EOF);
+                    return (offset_plus,result.1, ParsingResult::EOF);
                 }
             }
 
@@ -1384,27 +1438,38 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
                                           iter,
                                          //&char_vector,
                                          starting_pos,
-                                        
+                                        offset,
                                          resume_state_vec,
                                          state_vec,
                                          logger);
-            logger = result.0;
-            match result.1 {
+
+            offset_plus += result.0;
+            offset += result.0;
+            logger = result.1;
+            match result.2 {
 
                 ParsingResult::Pass(s_pos, e_pos) => {
-                    logger.pass(rule.rule_name.clone(), &peek_collect_start_end(iter, s_pos, e_pos), s_pos, e_pos);
-                    return (logger, result.1);
+                    //deleting unnecessary chars causes this:
+                    if s_pos<offset{
+                        logger.pass(rule.rule_name.clone(), &Vec::new(), 0, 0);
+                    }else{
+                        logger.pass(rule.rule_name.clone(), &peek_collect_start_end(iter, s_pos-offset, e_pos-offset), s_pos, e_pos);
+                            
+                    }
+
+                    
+                    return (offset_plus,logger, result.2);
                 }
                 ParsingResult::Fail => {
                     logger.pass(rule.rule_name.clone(),
                                 &Vec::new(),
                                 starting_pos,
                                 starting_pos);
-                    return (logger, ParsingResult::Pass(starting_pos, starting_pos));
+                    return (0,logger, ParsingResult::Pass(starting_pos, starting_pos));
                 }
                 ParsingResult::EOF => {
                     // burada state_vec.pop(); cagirmiyoruz
-                    return (logger, ParsingResult::EOF);
+                    return (offset_plus,logger, ParsingResult::EOF);
                 }
             }
 
@@ -1412,10 +1477,18 @@ pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRu
         // unreachable
           _ => {
          println!("UNIMPLEMENTED PARSER FOR TYPE!" );
-         return (logger, ParsingResult::Fail);
+         return (offset_plus,logger, ParsingResult::Fail);
          
          }
     }
+}
+
+pub fn remove_nth<R:Read>(iter : &mut itertools::MultiPeek<char_iter::Chars<R>>, nth :usize) {
+    //println!("REMOVE USED:{:?}",nth );
+     iter.reset_peek();
+     for _ in 0..nth {
+          iter.next();
+        }
 }
 
 pub fn peek_nth<R:Read>(iter : &mut itertools::MultiPeek<char_iter::Chars<R>>, nth :usize) -> char{

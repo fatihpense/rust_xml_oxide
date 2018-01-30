@@ -59,7 +59,7 @@ fn new_parser_3() {
     {
         let mut sax_parser = SaxParser::new();
         sax_parser.set_content_handler(&mut my_sax_handler);
-        sax_parser.parse3(&mut reader);
+        sax_parser.parse(&mut reader);
     }
 
     assert_eq!(true, true);

@@ -128,6 +128,10 @@ impl Attributes {
 }
 
 impl<'a> ParsingPassLogStream for SaxParser<'a> {
+    fn offset(&mut self, offset:usize){
+        //self.content_handler.
+        &self.content_handler.as_mut().unwrap().offset(offset);
+    }
     fn try(&mut self, rulename: String, starting_pos: usize) -> () {
 //println!("try rule: {:?}",rulename );
         if rulename == "STag" || rulename == "EmptyElemTag" {
@@ -272,7 +276,7 @@ impl<'a> SaxParser<'a> {
         self.content_handler = Some(content_handler);
     }
 
-    pub fn parse<R: Read>(mut self, read: R) {
+    pub fn parse_old<R: Read>(mut self, read: R) {
 
 
 
@@ -435,7 +439,7 @@ loop {
 */
      }
  
- pub fn parse3<R: Read>(mut self, read: R) {
+ pub fn parse<R: Read>(mut self, read: R) {
 
 
     let mut parser_rules = prepare_rules();
@@ -458,11 +462,11 @@ loop {
                                                  &mut citer,
                                                  //&Vec::new(),
                                                  0,
-                                                 
+                                                 0,
                                                  &mut resume_vec,
                                                  &mut state_vec,
                                                  self);
-    println!("result:{:?}",result.1 );
+    println!("result:{:?}",result.2 );
 
  }
 
