@@ -21,9 +21,13 @@ use std::ops::IndexMut;
 
 use itertools;
 
+use std::rc::Rc;
+use std::cell::RefCell;
 
-pub struct SaxParser<'a> {
-    content_handler: Option<&'a mut ContentHandler>,
+
+pub struct SaxParser {
+    content_handler: Option< Rc<RefCell<ContentHandler>> >,
+    stats_handler: Option< Rc<RefCell<StatsHandler>> >,
     counter: i64,
     element_names: Vec<String>,
     attribute_values: Vec<String>,
@@ -127,10 +131,17 @@ impl Attributes {
     }
 }
 
-impl<'a> ParsingPassLogStream for SaxParser<'a> {
+impl<'a> ParsingPassLogStream for SaxParser {
     fn offset(&mut self, offset:usize){
         //self.content_handler.
-        &self.content_handler.as_mut().unwrap().offset(offset);
+        //&self.content_handler.as_mut().unwrap().offset(offset);
+        {
+            if let &Some(_) = &self.stats_handler {
+                self.stats_handler.as_mut().unwrap().borrow_mut().offset(offset);
+            }
+        }
+
+        
     }
     fn try(&mut self, rulename: String, starting_pos: usize) -> () {
 //println!("try rule: {:?}",rulename );
@@ -191,28 +202,28 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
 
         if rulename == "STag" {
             let name: String = self.element_names.pop().unwrap();
-            self.content_handler.as_mut().unwrap().start_element(&name, &self.attributes);
+            self.content_handler.as_mut().unwrap().borrow_mut().start_element(&name, &self.attributes);
         }
 
         if rulename == "EmptyElemTag" {
 
             let name: String = self.element_names.pop().unwrap();
-            self.content_handler.as_mut().unwrap().start_element(&name, &self.attributes);
+            self.content_handler.as_mut().unwrap().borrow_mut().start_element(&name, &self.attributes);
         }
 
         if rulename == "ETag" {
             let name: String = self.element_names.pop().unwrap();
-            self.content_handler.as_mut().unwrap().end_element(&name);
+            self.content_handler.as_mut().unwrap().borrow_mut().end_element(&name);
         }
         if rulename == "CharData?" {
             let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
-            self.content_handler.as_mut().unwrap().characters(&s);
+            self.content_handler.as_mut().unwrap().borrow_mut().characters(&s);
         }
 
         // [18] CDSect
         if rulename == "CDSect" {
             let s: String = chars[starting_pos + 9..ending_pos - 3].into_iter().cloned().collect();
-            self.content_handler.as_mut().unwrap().characters(&s);
+            self.content_handler.as_mut().unwrap().borrow_mut().characters(&s);
         }
 
         // rule 67
@@ -255,25 +266,30 @@ impl<'a> ParsingPassLogStream for SaxParser<'a> {
                 };
 
             }
-            self.content_handler.as_mut().unwrap().characters(&result);
+            self.content_handler.as_mut().unwrap().borrow_mut().characters(&result);
         }
 
 
     }
 }
 
-impl<'a> SaxParser<'a> {
-    pub fn new() -> SaxParser<'a> {
+impl<'a> SaxParser {
+    pub fn new() -> SaxParser {
         return SaxParser {
             content_handler: None,
+            stats_handler:None,
             counter: 0,
             element_names: Vec::new(),
             attribute_values: Vec::new(),
             attributes: Attributes::new(),
         };
     }
-    pub fn set_content_handler<T: ContentHandler>(&mut self, content_handler: &'a mut T) {
+    pub fn set_content_handler<T: ContentHandler + 'static>(&mut self, content_handler: Rc<RefCell<T>>) {
         self.content_handler = Some(content_handler);
+    }
+
+    pub fn set_stats_handler<T: StatsHandler+ 'static>(&mut self, stats_handler: Rc<RefCell<T>>) {
+        self.stats_handler = Some(stats_handler);
     }
 
     pub fn parse_old<R: Read>(mut self, read: R) {
@@ -337,7 +353,15 @@ impl<'a> SaxParser<'a> {
 
                     state_vec = Vec::new();
                     // starting position can be different erasable_pos?
-                    &self.content_handler.as_mut().unwrap().offset(erasable_pos);
+                    //&self.content_handler.as_mut().unwrap().offset(erasable_pos);
+                        // .unwrap()
+                    {
+                    if let Some(_) = self.stats_handler {
+                        self.stats_handler.as_mut().unwrap().borrow_mut().offset(erasable_pos);
+                        
+                    }
+                    }
+
                     chars = chars.split_off(erasable_pos);
 
                 }
@@ -358,9 +382,12 @@ impl<'a> SaxParser<'a> {
                                      self);
         self = result.0;
 
-
-        &self.content_handler.as_mut().unwrap().offset(chars.len());
-
+        
+       // .unwrap()
+        if let Some(_) = self.stats_handler {
+            self.stats_handler.as_mut().unwrap().borrow_mut().offset(chars.len());
+        }
+  
 
     }
 
@@ -440,7 +467,6 @@ loop {
      }
  
  pub fn parse<R: Read>(mut self, read: R) {
-
 
     let mut parser_rules = prepare_rules();
     //parsertidy::remove_optional(&mut parser_rules);

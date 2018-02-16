@@ -10,6 +10,9 @@ use std::fs::File;
 
 use xml_oxide::sax::*;
 
+use std::rc::Rc;
+use std::cell::RefCell;
+
 struct MySaxHandler {
     pub attributes_string: String,
 }
@@ -32,8 +35,13 @@ impl xml_sax::ContentHandler for MySaxHandler {
     fn characters(&mut self, characters: &str) {
         // println!("{}", characters);
     }
+    
+}
+
+impl xml_sax::StatsHandler for MySaxHandler {
     fn offset(&mut self, offset: usize) {}
 }
+
 
 #[test]
 fn tidy_parser() {
@@ -58,7 +66,8 @@ fn new_parser_3() {
     };
     {
         let mut sax_parser = SaxParser::new();
-        sax_parser.set_content_handler(&mut my_sax_handler);
+        let handler = Rc::new(RefCell::new(my_sax_handler));
+        sax_parser.set_content_handler(handler);
         sax_parser.parse(&mut reader);
     }
 

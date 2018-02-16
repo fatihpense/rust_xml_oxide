@@ -9,7 +9,8 @@ use std::io::BufRead;
 
 use std::char;
 
-
+use std::rc::Rc;
+use std::cell::RefCell;
 
 
 use std::time::{Duration, Instant};
@@ -39,12 +40,16 @@ impl xml_sax::ContentHandler for MySaxHandler {
     fn characters(&mut self, characters: &str) {
         println!("{}", characters);
     }
-    fn offset(&mut self, offset: usize) {
-        self.char_counter = self.char_counter + offset;
-        // println!("offset:{}", offset);
-    }
+
+
 }
 
+
+impl xml_sax::StatsHandler for MySaxHandler {
+    fn offset(&mut self, offset: usize) {
+        self.char_counter = self.char_counter + offset;
+    }
+}
 
 
 
@@ -104,11 +109,13 @@ impl xml_sax::ContentHandler for MyCollectorSaxHandler {
         // println!("characters: {}", characters);
         self.characters_buf.push_str(characters);
     }
+
+}
+impl xml_sax::StatsHandler for MyCollectorSaxHandler {
     fn offset(&mut self, offset: usize) {
         self.char_counter = self.char_counter + offset;
     }
 }
-
 
 
 
@@ -126,19 +133,23 @@ fn test_basic() {
         characters_collected_vec: Vec::new(),
         characters_buf: String::new(),
     };
-    {
+    
         let mut sax_parser = SaxParser::new();
-        sax_parser.set_content_handler(&mut my_sax_handler);
+        
+            let handler = Rc::new(RefCell::new(my_sax_handler));
+        sax_parser.set_content_handler(handler.clone());
+        
+        sax_parser.set_stats_handler(handler.clone());
         sax_parser.parse(&mut reader);
-    }
-    assert_eq!(my_sax_handler.char_counter, 33);
-    assert_eq!(my_sax_handler.start_counter, 2);
-    assert_eq!(my_sax_handler.end_counter, 2);
-    assert_eq!(my_sax_handler.start_el_name_vec.get(0).unwrap(), "rootEl");
-    println!("{:?}", my_sax_handler.characters_collected_vec);
-    assert_eq!(my_sax_handler.end_el_name_vec.get(0).unwrap(), "value");
+    
+    assert_eq!(handler.borrow().char_counter, 33);
+    assert_eq!(handler.borrow().start_counter, 2);
+    assert_eq!(handler.borrow().end_counter, 2);
+    assert_eq!(handler.borrow().start_el_name_vec.get(0).unwrap(), "rootEl");
+    println!("{:?}", handler.borrow().characters_collected_vec);
+    assert_eq!(handler.borrow().end_el_name_vec.get(0).unwrap(), "value");
 
-    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(), "5");
+    assert_eq!(handler.borrow().characters_collected_vec.get(0).unwrap(), "5");
     // assert_eq!(my_sax_handler.end, );
 
 }
@@ -169,13 +180,14 @@ fn test_66_EntityRef() {
         characters_collected_vec: Vec::new(),
         characters_buf: String::new(),
     };
-    {
+    
         let mut sax_parser = SaxParser::new();
-        sax_parser.set_content_handler(&mut my_sax_handler);
+        let handler = Rc::new(RefCell::new(my_sax_handler));
+        sax_parser.set_content_handler(handler.clone());
         sax_parser.parse(&mut reader);
-    }
+    
 
-    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+    assert_eq!(handler.borrow().characters_collected_vec.get(0).unwrap(),
                "1<2<3<4");
     // assert_eq!(my_sax_handler.end, );
 
@@ -196,14 +208,15 @@ fn test_18_CDATA() {
         characters_collected_vec: Vec::new(),
         characters_buf: String::new(),
     };
-    {
+    
         let mut sax_parser = SaxParser::new();
-        sax_parser.set_content_handler(&mut my_sax_handler);
+        let handler = Rc::new(RefCell::new(my_sax_handler));
+        sax_parser.set_content_handler(handler.clone());
         sax_parser.parse(&mut reader);
-    }
+    
     println!("{}",
-             my_sax_handler.characters_collected_vec.get(0).unwrap());
-    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+             handler.borrow().characters_collected_vec.get(0).unwrap());
+    assert_eq!(handler.borrow().characters_collected_vec.get(0).unwrap(),
                "1<2<3<4 1&lt;2&#60;3&#x0003C;4");
 
 }
@@ -224,14 +237,15 @@ fn test_15_Comment() {
         characters_collected_vec: Vec::new(),
         characters_buf: String::new(),
     };
-    {
+    
         let mut sax_parser = SaxParser::new();
-        sax_parser.set_content_handler(&mut my_sax_handler);
+        let handler = Rc::new(RefCell::new(my_sax_handler));
+        sax_parser.set_content_handler(handler.clone());
         sax_parser.parse(&mut reader);
-    }
+    
     println!("{}",
-             my_sax_handler.characters_collected_vec.get(0).unwrap());
-    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+             handler.borrow().characters_collected_vec.get(0).unwrap());
+    assert_eq!(handler.borrow().characters_collected_vec.get(0).unwrap(),
                "comments.");
 
 }
@@ -252,14 +266,15 @@ fn test_15_Comment_not_well_formed() {
         characters_collected_vec: Vec::new(),
         characters_buf: String::new(),
     };
-    {
+    
         let mut sax_parser = SaxParser::new();
-        sax_parser.set_content_handler(&mut my_sax_handler);
+        let handler = Rc::new(RefCell::new(my_sax_handler));
+        sax_parser.set_content_handler(handler.clone());
         sax_parser.parse(&mut reader);
-    }
+    
     println!("{}",
-             my_sax_handler.characters_collected_vec.get(0).unwrap());
-    assert_eq!(my_sax_handler.characters_collected_vec.get(0).unwrap(),
+             handler.borrow().characters_collected_vec.get(0).unwrap());
+    assert_eq!(handler.borrow().characters_collected_vec.get(0).unwrap(),
                "comments.");
 
 }

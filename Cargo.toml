@@ -10,6 +10,6 @@ categories = ["parsing","parser-implementations"]
 license = "MIT"
 
 [dependencies]
-xml_sax = "0.0.2"
+xml_sax = { path = "C:/dev/github/rust/rust_xml_sax" }
 indextree = "1.1.0"
 itertools = "0.7.6"
