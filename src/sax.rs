@@ -483,6 +483,7 @@ loop {
 */
         let mut resume_vec = Vec::new();
         let mut state_vec = Vec::new();
+         self.content_handler.as_mut().unwrap().borrow_mut().start_document();
      let result = parse_with_rule2(&parser_rules.rule_vec,
                                                  &rule,
                                                  &mut citer,
@@ -492,7 +493,9 @@ loop {
                                                  &mut resume_vec,
                                                  &mut state_vec,
                                                  self);
-    println!("result:{:?}",result.2 );
+    self = result.1;
+    self.content_handler.as_mut().unwrap().borrow_mut().start_document();
+    //println!("result:{:?}",result.2 );
 
  }
 

@@ -29,6 +29,8 @@ struct MySaxHandler {
 }
 
 impl xml_sax::ContentHandler for MySaxHandler {
+    fn start_document(&mut self){}
+    fn end_document(&mut self){}
     fn start_element(&mut self, name: &str, attributes: &xml_sax::SAXAttributes) {
         self.counter = self.counter + 1;
         println!("{}", name);
@@ -83,6 +85,8 @@ struct MyCollectorSaxHandler {
 }
 
 impl xml_sax::ContentHandler for MyCollectorSaxHandler {
+    fn start_document(&mut self){}
+    fn end_document(&mut self){}
     fn start_element(&mut self, qualified_name: &str, attributes: &xml_sax::SAXAttributes) {
         self.start_counter = self.start_counter + 1;
         self.start_el_name_vec.push(qualified_name.to_owned());
