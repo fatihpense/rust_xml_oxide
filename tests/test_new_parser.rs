@@ -68,7 +68,7 @@ fn new_parser() {
         let mut sax_parser = SaxParser::new();
         let handler = Rc::new(RefCell::new(my_sax_handler));
         sax_parser.set_content_handler(handler);
-        sax_parser.parse2(&mut reader);
+        sax_parser.parse(&mut reader);
     }
 
     assert_eq!(true, true);

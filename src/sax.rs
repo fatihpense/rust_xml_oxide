@@ -2,7 +2,7 @@ use parser::ParsingPassLogStream;
 use parser::parse_with_rule;
 use parser::parse_with_rule2;
 use parser::prepare_rules;
-use parsertidy;
+
 
 use std::io::Read;
 use std::collections::HashMap;
@@ -12,11 +12,9 @@ use std::char;
 
 use xml_sax::*;
 
-use tree::*;
 
-use indextree::Arena;
-use std::ops::Index;
-use std::ops::IndexMut;
+
+
 
 use itertools;
 
@@ -138,7 +136,7 @@ impl<'a> ParsingPassLogStream for SaxParser {
             }
         }
     }
-    fn try(&mut self, rulename: String, starting_pos: usize) -> () {
+    fn try(&mut self, rulename: String, _: usize) -> () { //starting_pos _
         //println!("try rule: {:?}",rulename );
         if rulename == "STag" || rulename == "EmptyElemTag" {
             self.element_names.clear();
@@ -412,84 +410,9 @@ impl<'a> SaxParser {
         }
     }
 
-    pub fn parse2<R: Read>(mut self, read: R) {
-        let mut parser_rules = prepare_rules();
-        parsertidy::remove_optional(&mut parser_rules);
-        parsertidy::remove_zeroormore(&mut parser_rules);
-        let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
-
-        //let mut chars: Vec<char> = Vec::new();
-
-        let mut citer = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
-        {
-            &citer.peek();
-        }
-        let mut arena = &mut Arena::new();
-
-        let node = PNode {
-            rulename: "document".to_owned(),
-            state: StateType::Init,
-            ruletype: rule.rule_type.clone(),
-            current_sequence: 0,
-        };
-
-        // Add some new nodes to the arena
-        let a = arena.new_node(node);
-        let mut index = 0;
-        loop {
-            match citer.next() {
-                Some(ch) => {
-                    if ch.is_ok() {
-                        PNode::new_char(&parser_rules, a, arena, ch.unwrap(), &mut citer);
-                        println!("PRINTING{:?}", index);
-
-                        {
-                            let pnode: &PNode = &arena.index(a).data;
-                            println!(
-                                "{:?}|sta:{:?}|seq:{:?}|typ:{:?}",
-                                pnode.rulename, pnode.state, pnode.current_sequence, pnode.ruletype
-                            ); //arena.index(n).data
-                        }
-                        PNode::print(a, arena, 0);
-                    } else {
-                        break;
-                    }
-                }
-                None => break,
-            }
-            index += 1;
-        }
-        /*
-        for (i,ch) in citer.enumerate() {
-
-            if ch.is_ok() {
-//parse with state char by char
-                println!("" );
-                PNode::new_char(&parser_rules,a, arena, ch.unwrap());
-                println!("PRINTING,{:?}",i);
-
-               {
-                    let pnode : &PNode = &arena.index(a).data;
-                     println!("{:?}|sta:{:?}|seq:{:?}|typ:{:?}", pnode.rulename,pnode.state,pnode.current_sequence,pnode.ruletype); //arena.index(n).data
-               }
-                PNode::print(a, arena,0);
-                //node.new_char(&mut arena, ch.unwrap());
-               
-               /*if i==5{
-               break;
-               }*/
-               
-            } else {
-
-                break;
-            }
-        }
-         //PNode::print(a, arena);
-*/
-    }
 
     pub fn parse<R: Read>(mut self, read: R) {
-        let mut parser_rules = prepare_rules();
+        let parser_rules = prepare_rules();
         //parsertidy::remove_optional(&mut parser_rules);
         //parsertidy::remove_zeroormore(&mut parser_rules);
         let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];

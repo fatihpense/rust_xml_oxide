@@ -111,7 +111,7 @@ pub fn remove_zeroormore(parser: &mut Parser) {
                 let mut zom_rule_name: String = "".to_owned();
                 let mut zom_orig_child_rule_name: String = "".to_owned();
 
-                let mut child_vec: Vec<Vec<String>> = vec![vec![]];
+                //let mut child_vec: Vec<Vec<String>> = vec![vec![]];
                 for (i, rulenamec) in rule.children_names.iter().enumerate() {
                     let rulec: &ParsingRule =
                         &parser_rule_vec_2[*parser.rule_registry.get(rulenamec).unwrap()];
@@ -230,7 +230,7 @@ pub fn change_zom_rule_rec(
     zom_queue.insert(zom_gen_rule_name, (zom_orig_child_name, zom_children));
 }
 
-pub fn remove_withexception(parser: &mut Parser) {
+pub fn remove_withexception(_: &mut Parser) {
     /*for rule in parser.rule_vec.iter_mut() {
         let rule: &mut ParsingRule = rule;
         if rule.rule_type == RuleType::WithException {
@@ -245,7 +245,7 @@ pub fn print_rules(parser: &Parser, rule_name: String, depth: usize) {
         return;
     }
     let rule: &ParsingRule = &parser.rule_vec[*parser.rule_registry.get(&rule_name).unwrap()];
-    for x in 0..depth {
+    for _ in 0..depth {
         print!("-");
     }
     println!("name: {:?}, type:{:?}", rule.rule_name, rule.rule_type);
