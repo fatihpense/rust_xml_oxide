@@ -1,29 +1,27 @@
-
 use std::collections::HashMap;
 use itertools;
 use char_iter;
 use std::io::Read;
 
-#[derive(PartialEq, Eq)]
-#[derive(Debug,Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum RuleType {
     And, //new parser specific
     Not, //new parser specific
     Sequence,
     Or,
-    Chars, // directly chars
+    Chars,        // directly chars
     CharSequence, // easy char sequence for <!-- cdata etc. TODO
     CharsNot,
-    ZeroOrMore, //new parser delete
+    ZeroOrMore,    //new parser delete
     WithException, //new parser delete
-    Optional, //new parser delete
+    Optional,      //new parser delete
 }
 
 pub struct Parser {
     pub rule_vec: Vec<ParsingRule>,
     pub rule_registry: HashMap<String, usize>,
 }
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct ParsingRule {
     pub rule_name: String,
     pub rule_type: RuleType,
@@ -56,7 +54,6 @@ pub fn prepare_rules<'a>() -> Parser {
     let mut ruleRegistry: HashMap<String, usize> = HashMap::new();
     let mut rule_nameRegistry: HashMap<String, ParsingRule> = HashMap::new();
 
-
     // general rule implementations
     let mut AposChar = ParsingRule::new("'".to_owned(), RuleType::Chars);
     AposChar.expected_chars.push('\'');
@@ -70,11 +67,9 @@ pub fn prepare_rules<'a>() -> Parser {
     charLT.expected_chars.push('<');
     rule_nameRegistry.insert(charLT.rule_name.clone(), charLT);
 
-
     let mut charBT = ParsingRule::new(">".to_owned(), RuleType::Chars);
     charBT.expected_chars.push('>');
     rule_nameRegistry.insert(charBT.rule_name.clone(), charBT);
-
 
     let mut endTagToken = ParsingRule::new("'</'".to_owned(), RuleType::CharSequence);
     endTagToken.expected_chars.push('<');
@@ -93,12 +88,10 @@ pub fn prepare_rules<'a>() -> Parser {
     semicolon_char.expected_chars.push(';');
     rule_nameRegistry.insert(semicolon_char.rule_name.clone(), semicolon_char);
 
-
     let mut notLTorAmp = ParsingRule::new("[^<&]".to_owned(), RuleType::CharsNot);
     notLTorAmp.expected_chars.push('<');
     notLTorAmp.expected_chars.push('&');
     rule_nameRegistry.insert(notLTorAmp.rule_name.clone(), notLTorAmp);
-
 
     let mut notLTorAmpZeroOrMore = ParsingRule::new("[^<&]*".to_owned(), RuleType::ZeroOrMore);
     notLTorAmpZeroOrMore.children_names.push("[^<&]".to_owned());
@@ -112,7 +105,9 @@ pub fn prepare_rules<'a>() -> Parser {
     rule_nameRegistry.insert(not_lt_amp_quote.rule_name.clone(), not_lt_amp_quote);
 
     let mut not_lt_amp_quote_zom = ParsingRule::new("[^<&\"]*".to_owned(), RuleType::ZeroOrMore);
-    not_lt_amp_quote_zom.children_names.push("[^<&\"]".to_owned());
+    not_lt_amp_quote_zom
+        .children_names
+        .push("[^<&\"]".to_owned());
     rule_nameRegistry.insert(not_lt_amp_quote_zom.rule_name.clone(), not_lt_amp_quote_zom);
 
     //  ([^<&]* ']]>' [^<&]*)
@@ -123,8 +118,6 @@ pub fn prepare_rules<'a>() -> Parser {
     CdataEnd.expected_chars.push('>');
 
     rule_nameRegistry.insert(CdataEnd.rule_name.clone(), CdataEnd);
-
-
 
     // Parser Rules organized by W3C Spec
 
@@ -139,11 +132,14 @@ pub fn prepare_rules<'a>() -> Parser {
 
     // [2] Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
     let mut Char = ParsingRule::new("Char".to_owned(), RuleType::Chars);
-    let char_rule_ranges_arr = [('\u{A}', '\u{D}'),
-                                ('\u{20}', '\u{D7FF}'),
-                                ('\u{E000}', '\u{FFFD}'),
-                                ('\u{10000}', '\u{10FFFF}')];
-    Char.expected_char_ranges.extend(char_rule_ranges_arr.iter().cloned());
+    let char_rule_ranges_arr = [
+        ('\u{A}', '\u{D}'),
+        ('\u{20}', '\u{D7FF}'),
+        ('\u{E000}', '\u{FFFD}'),
+        ('\u{10000}', '\u{10FFFF}'),
+    ];
+    Char.expected_char_ranges
+        .extend(char_rule_ranges_arr.iter().cloned());
     rule_nameRegistry.insert(Char.rule_name.clone(), Char);
 
     let mut Char_optional = ParsingRule::new("Char?".to_owned(), RuleType::Optional);
@@ -154,8 +150,6 @@ pub fn prepare_rules<'a>() -> Parser {
     let mut Char_zom = ParsingRule::new("Char*".to_owned(), RuleType::ZeroOrMore);
     Char_zom.children_names.push("Char".to_owned());
     rule_nameRegistry.insert(Char_zom.rule_name.clone(), Char_zom);
-
-
 
     // [3] S ::= (#x20 | #x9 | #xD | #xA)+
     let mut S_single = ParsingRule::new("S_single".to_owned(), RuleType::Chars);
@@ -180,33 +174,42 @@ pub fn prepare_rules<'a>() -> Parser {
     // [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
     let mut NameStartChar = ParsingRule::new("NameStartChar".to_owned(), RuleType::Chars);
 
-    let name_start_char_rule_ranges_arr = [('A', 'Z'), /* ('A', 'Z'), veya ('\u{0041}', '\u{005A}'), */
-                                           ('a', 'z'), // ('a', 'z') veya ('\u{61}', '\u{7A}'),
-                                           ('\u{C0}', '\u{D6}'),
-                                           ('\u{D8}', '\u{F6}'),
-                                           ('\u{F8}', '\u{2FF}'),
-                                           ('\u{370}', '\u{37D}'),
-                                           ('\u{37F}', '\u{1FFF}'),
-                                           ('\u{200C}', '\u{200D}'),
-                                           ('\u{2070}', '\u{218F}'),
-                                           ('\u{2C00}', '\u{2FEF}'),
-                                           ('\u{3001}', '\u{D7FF}'),
-                                           ('\u{F900}', '\u{FDCF}'),
-                                           ('\u{FDF0}', '\u{FFFD}'),
-                                           ('\u{10000}', '\u{EFFFF}')];
+    let name_start_char_rule_ranges_arr = [
+        ('A', 'Z'), /* ('A', 'Z'), veya ('\u{0041}', '\u{005A}'), */
+        ('a', 'z'), // ('a', 'z') veya ('\u{61}', '\u{7A}'),
+        ('\u{C0}', '\u{D6}'),
+        ('\u{D8}', '\u{F6}'),
+        ('\u{F8}', '\u{2FF}'),
+        ('\u{370}', '\u{37D}'),
+        ('\u{37F}', '\u{1FFF}'),
+        ('\u{200C}', '\u{200D}'),
+        ('\u{2070}', '\u{218F}'),
+        ('\u{2C00}', '\u{2FEF}'),
+        ('\u{3001}', '\u{D7FF}'),
+        ('\u{F900}', '\u{FDCF}'),
+        ('\u{FDF0}', '\u{FFFD}'),
+        ('\u{10000}', '\u{EFFFF}'),
+    ];
 
-    NameStartChar.expected_char_ranges.extend(name_start_char_rule_ranges_arr.iter().cloned());
+    NameStartChar
+        .expected_char_ranges
+        .extend(name_start_char_rule_ranges_arr.iter().cloned());
     NameStartChar.expected_chars.push(':');
     NameStartChar.expected_chars.push('_');
 
     rule_nameRegistry.insert(NameStartChar.rule_name.clone(), NameStartChar);
 
-
     // [4a] NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
     let mut NameCharExtraRule = ParsingRule::new("NameCharExtra".to_owned(), RuleType::Chars);
-    let name_char_extra_rule_ranges_arr =
-        [('0', '9'), ('a', 'z'), ('\u{0300}', '\u{036F}'), ('\u{203F}', '\u{2040}')];
-    NameCharExtraRule.expected_char_ranges.extend(name_char_extra_rule_ranges_arr.iter().cloned());
+    let name_char_extra_rule_ranges_arr = [
+        ('0', '9'),
+        ('a', 'z'),
+        ('\u{0300}', '\u{036F}'),
+        ('\u{203F}', '\u{2040}'),
+    ];
+    NameCharExtraRule
+        .expected_char_ranges
+        .extend(name_char_extra_rule_ranges_arr.iter().cloned());
     NameCharExtraRule.expected_chars.push('-');
     NameCharExtraRule.expected_chars.push('.');
     NameCharExtraRule.expected_chars.push('\u{B7}');
@@ -218,7 +221,9 @@ pub fn prepare_rules<'a>() -> Parser {
     rule_nameRegistry.insert(NameChar.rule_name.clone(), NameChar);
 
     let mut NameCharZeroOrMore = ParsingRule::new("NameChar*".to_owned(), RuleType::ZeroOrMore);
-    NameCharZeroOrMore.children_names.push("NameChar".to_owned());
+    NameCharZeroOrMore
+        .children_names
+        .push("NameChar".to_owned());
     rule_nameRegistry.insert(NameCharZeroOrMore.rule_name.clone(), NameCharZeroOrMore);
 
     let mut Name = ParsingRule::new("Name".to_owned(), RuleType::Sequence);
@@ -226,29 +231,40 @@ pub fn prepare_rules<'a>() -> Parser {
     Name.children_names.push("NameChar*".to_owned());
     rule_nameRegistry.insert(Name.rule_name.clone(), Name);
 
-
     // [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
-    let mut AttValue_char_or_ref = ParsingRule::new("([^<&\"] | Reference)".to_owned(),
-                                                    RuleType::Or);
-    AttValue_char_or_ref.children_names.push("[^<&\"]".to_owned());
-    AttValue_char_or_ref.children_names.push("ReferenceInAttrVal".to_owned());
+    let mut AttValue_char_or_ref =
+        ParsingRule::new("([^<&\"] | Reference)".to_owned(), RuleType::Or);
+    AttValue_char_or_ref
+        .children_names
+        .push("[^<&\"]".to_owned());
+    AttValue_char_or_ref
+        .children_names
+        .push("ReferenceInAttrVal".to_owned());
     rule_nameRegistry.insert(AttValue_char_or_ref.rule_name.clone(), AttValue_char_or_ref);
 
-    let mut AttValue_char_or_ref_zom = ParsingRule::new("([^<&\"] | Reference)*".to_owned(),
-                                                        RuleType::ZeroOrMore);
-    AttValue_char_or_ref_zom.children_names.push("([^<&\"] | Reference)".to_owned());
-    rule_nameRegistry.insert(AttValue_char_or_ref_zom.rule_name.clone(),
-                             AttValue_char_or_ref_zom);
+    let mut AttValue_char_or_ref_zom =
+        ParsingRule::new("([^<&\"] | Reference)*".to_owned(), RuleType::ZeroOrMore);
+    AttValue_char_or_ref_zom
+        .children_names
+        .push("([^<&\"] | Reference)".to_owned());
+    rule_nameRegistry.insert(
+        AttValue_char_or_ref_zom.rule_name.clone(),
+        AttValue_char_or_ref_zom,
+    );
 
     let mut AttValue_alt_1 = ParsingRule::new("AttValue_alt_1".to_owned(), RuleType::Sequence);
     AttValue_alt_1.children_names.push("\"".to_owned());
-    AttValue_alt_1.children_names.push("([^<&\"] | Reference)*".to_owned());
+    AttValue_alt_1
+        .children_names
+        .push("([^<&\"] | Reference)*".to_owned());
     AttValue_alt_1.children_names.push("\"".to_owned());
     rule_nameRegistry.insert(AttValue_alt_1.rule_name.clone(), AttValue_alt_1);
 
     let mut AttValue_alt_2 = ParsingRule::new("AttValue_alt_2".to_owned(), RuleType::Sequence);
     AttValue_alt_2.children_names.push("'".to_owned());
-    AttValue_alt_2.children_names.push("([^<&\"] | Reference)*".to_owned());
+    AttValue_alt_2
+        .children_names
+        .push("([^<&\"] | Reference)*".to_owned());
     AttValue_alt_2.children_names.push("'".to_owned());
     rule_nameRegistry.insert(AttValue_alt_2.rule_name.clone(), AttValue_alt_2);
 
@@ -256,10 +272,6 @@ pub fn prepare_rules<'a>() -> Parser {
     AttValue.children_names.push("AttValue_alt_1".to_owned());
     AttValue.children_names.push("AttValue_alt_2".to_owned());
     rule_nameRegistry.insert(AttValue.rule_name.clone(), AttValue);
-
-
-
-
 
     // [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
 
@@ -269,38 +281,50 @@ pub fn prepare_rules<'a>() -> Parser {
     // CharDataExceptionSeq.children_names.push("[^<&]*".to_owned() );
     // rule_nameRegistry.insert(CharDataExceptionSeq.rule_name.clone(), CharDataExceptionSeq);
 
-    let mut charDataSingleBeforeException = ParsingRule::new("([^<&] - ']]>')".to_owned(),
-                                                             RuleType::WithException);
-    charDataSingleBeforeException.children_names.push("[^<&]".to_owned());
-    charDataSingleBeforeException.children_names.push("']]>'".to_owned());
-    rule_nameRegistry.insert(charDataSingleBeforeException.rule_name.clone(),
-                             charDataSingleBeforeException);
+    let mut charDataSingleBeforeException =
+        ParsingRule::new("([^<&] - ']]>')".to_owned(), RuleType::WithException);
+    charDataSingleBeforeException
+        .children_names
+        .push("[^<&]".to_owned());
+    charDataSingleBeforeException
+        .children_names
+        .push("']]>'".to_owned());
+    rule_nameRegistry.insert(
+        charDataSingleBeforeException.rule_name.clone(),
+        charDataSingleBeforeException,
+    );
 
-    let mut charDataBeforeException = ParsingRule::new("([^<&] - ']]>')*".to_owned(),
-                                                       RuleType::ZeroOrMore);
-    charDataBeforeException.children_names.push("([^<&] - ']]>')".to_owned());
-    rule_nameRegistry.insert(charDataBeforeException.rule_name.clone(),
-                             charDataBeforeException);
+    let mut charDataBeforeException =
+        ParsingRule::new("([^<&] - ']]>')*".to_owned(), RuleType::ZeroOrMore);
+    charDataBeforeException
+        .children_names
+        .push("([^<&] - ']]>')".to_owned());
+    rule_nameRegistry.insert(
+        charDataBeforeException.rule_name.clone(),
+        charDataBeforeException,
+    );
 
-
-    let mut CharDataException = ParsingRule::new("([^<&] - ']]>')* ']]>' [^<&]*".to_owned(),
-                                                 RuleType::Sequence);
-    CharDataException.children_names.push("([^<&] - ']]>')*".to_owned());
+    let mut CharDataException = ParsingRule::new(
+        "([^<&] - ']]>')* ']]>' [^<&]*".to_owned(),
+        RuleType::Sequence,
+    );
+    CharDataException
+        .children_names
+        .push("([^<&] - ']]>')*".to_owned());
     CharDataException.children_names.push("']]>'".to_owned());
     CharDataException.children_names.push("[^<&]*".to_owned());
     rule_nameRegistry.insert(CharDataException.rule_name.clone(), CharDataException);
 
-
     let mut CharData = ParsingRule::new("CharData".to_owned(), RuleType::WithException);
     CharData.children_names.push("[^<&]*".to_owned());
-    CharData.children_names.push("([^<&] - ']]>')* ']]>' [^<&]*".to_owned());
+    CharData
+        .children_names
+        .push("([^<&] - ']]>')* ']]>' [^<&]*".to_owned());
     rule_nameRegistry.insert(CharData.rule_name.clone(), CharData);
-
 
     let mut CharDataOptional = ParsingRule::new("CharData?".to_owned(), RuleType::Optional);
     CharDataOptional.children_names.push("CharData".to_owned());
     rule_nameRegistry.insert(CharDataOptional.rule_name.clone(), CharDataOptional);
-
 
     // [15] Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
     let mut Comment_start = ParsingRule::new("'<!--'".to_owned(), RuleType::CharSequence);
@@ -320,9 +344,11 @@ pub fn prepare_rules<'a>() -> Parser {
     Comment_inside.children_names.push("'--'".to_owned());
     rule_nameRegistry.insert(Comment_inside.rule_name.clone(), Comment_inside);
 
-    let mut Comment_inside_zom = ParsingRule::new("(Char - '--')*".to_owned(),
-                                                  RuleType::ZeroOrMore);
-    Comment_inside_zom.children_names.push("(Char - '--')".to_owned());
+    let mut Comment_inside_zom =
+        ParsingRule::new("(Char - '--')*".to_owned(), RuleType::ZeroOrMore);
+    Comment_inside_zom
+        .children_names
+        .push("(Char - '--')".to_owned());
     rule_nameRegistry.insert(Comment_inside_zom.rule_name.clone(), Comment_inside_zom);
 
     let mut Comment = ParsingRule::new("Comment".to_owned(), RuleType::Sequence);
@@ -330,7 +356,6 @@ pub fn prepare_rules<'a>() -> Parser {
     Comment.children_names.push("(Char - '--')*".to_owned());
     Comment.children_names.push("'-->'".to_owned());
     rule_nameRegistry.insert(Comment.rule_name.clone(), Comment);
-
 
     // [18] CDSect ::= CDStart CData CDEnd
     let mut CDSect = ParsingRule::new("CDSect".to_owned(), RuleType::Sequence);
@@ -344,26 +369,29 @@ pub fn prepare_rules<'a>() -> Parser {
     CDStart.expected_chars = "<![CDATA[".chars().collect();
     rule_nameRegistry.insert(CDStart.rule_name.clone(), CDStart);
 
-
     // [20] CData ::= (Char* - (Char* ']]>' Char*))
 
-    let mut CDataSingleWithException = ParsingRule::new("(Char - ']]>')".to_owned(),
-                                                        RuleType::WithException);
-    CDataSingleWithException.children_names.push("Char".to_owned());
-    CDataSingleWithException.children_names.push("']]>'".to_owned());
-    rule_nameRegistry.insert(CDataSingleWithException.rule_name.clone(),
-                             CDataSingleWithException);
+    let mut CDataSingleWithException =
+        ParsingRule::new("(Char - ']]>')".to_owned(), RuleType::WithException);
+    CDataSingleWithException
+        .children_names
+        .push("Char".to_owned());
+    CDataSingleWithException
+        .children_names
+        .push("']]>'".to_owned());
+    rule_nameRegistry.insert(
+        CDataSingleWithException.rule_name.clone(),
+        CDataSingleWithException,
+    );
 
     let mut CData = ParsingRule::new("CData".to_owned(), RuleType::ZeroOrMore);
     CData.children_names.push("(Char - ']]>')".to_owned());
     rule_nameRegistry.insert(CData.rule_name.clone(), CData);
 
-
     // [21] CDEnd ::= ']]>'
     let mut CDEnd = ParsingRule::new("CDEnd".to_owned(), RuleType::CharSequence);
     CDEnd.expected_chars = "]]>".chars().collect();
     rule_nameRegistry.insert(CDEnd.rule_name.clone(), CDEnd);
-
 
     // [23] XMLDecl ::= '<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
     let mut XMLDecl_start = ParsingRule::new("'<?xml'".to_owned(), RuleType::CharSequence);
@@ -387,40 +415,46 @@ pub fn prepare_rules<'a>() -> Parser {
     XMLDecl_optional.children_names.push("XMLDecl".to_owned());
     rule_nameRegistry.insert(XMLDecl_optional.rule_name.clone(), XMLDecl_optional);
 
-
-
     // [24] VersionInfo ::= S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
     let mut VersionInfo_version = ParsingRule::new("'version'".to_owned(), RuleType::CharSequence);
     VersionInfo_version.expected_chars = "version".chars().collect();
     rule_nameRegistry.insert(VersionInfo_version.rule_name.clone(), VersionInfo_version);
 
-
-    let mut VersionInfo_VNum1 = ParsingRule::new("\"'\" VersionNum \"'\"".to_owned(),
-                                                 RuleType::Sequence);
+    let mut VersionInfo_VNum1 =
+        ParsingRule::new("\"'\" VersionNum \"'\"".to_owned(), RuleType::Sequence);
     VersionInfo_VNum1.children_names.push("'".to_owned());
-    VersionInfo_VNum1.children_names.push("VersionNum".to_owned());
+    VersionInfo_VNum1
+        .children_names
+        .push("VersionNum".to_owned());
     VersionInfo_VNum1.children_names.push("'".to_owned());
     rule_nameRegistry.insert(VersionInfo_VNum1.rule_name.clone(), VersionInfo_VNum1);
 
-    let mut VersionInfo_VNum2 = ParsingRule::new("'\"' VersionNum '\"'".to_owned(),
-                                                 RuleType::Sequence);
+    let mut VersionInfo_VNum2 =
+        ParsingRule::new("'\"' VersionNum '\"'".to_owned(), RuleType::Sequence);
     VersionInfo_VNum2.children_names.push("\"".to_owned());
-    VersionInfo_VNum2.children_names.push("VersionNum".to_owned());
+    VersionInfo_VNum2
+        .children_names
+        .push("VersionNum".to_owned());
     VersionInfo_VNum2.children_names.push("\"".to_owned());
     rule_nameRegistry.insert(VersionInfo_VNum2.rule_name.clone(), VersionInfo_VNum2);
 
     let mut VersionInfo_VNum = ParsingRule::new("VersionInfo_VersionNum".to_owned(), RuleType::Or);
-    VersionInfo_VNum.children_names.push("\"'\" VersionNum \"'\"".to_owned());
-    VersionInfo_VNum.children_names.push("'\"' VersionNum '\"'".to_owned());
+    VersionInfo_VNum
+        .children_names
+        .push("\"'\" VersionNum \"'\"".to_owned());
+    VersionInfo_VNum
+        .children_names
+        .push("'\"' VersionNum '\"'".to_owned());
     rule_nameRegistry.insert(VersionInfo_VNum.rule_name.clone(), VersionInfo_VNum);
 
     let mut VersionInfo = ParsingRule::new("VersionInfo".to_owned(), RuleType::Sequence);
     VersionInfo.children_names.push("S".to_owned());
     VersionInfo.children_names.push("'version'".to_owned());
     VersionInfo.children_names.push("Eq".to_owned());
-    VersionInfo.children_names.push("VersionInfo_VersionNum".to_owned());
+    VersionInfo
+        .children_names
+        .push("VersionInfo_VersionNum".to_owned());
     rule_nameRegistry.insert(VersionInfo.rule_name.clone(), VersionInfo);
-
 
     // [25] Eq ::= S? '=' S?
     let mut equalsCharRule = ParsingRule::new("'='".to_owned(), RuleType::Chars);
@@ -456,9 +490,6 @@ pub fn prepare_rules<'a>() -> Parser {
     VersionNum.children_names.push("[0-9]+".to_owned());
     rule_nameRegistry.insert(VersionNum.rule_name.clone(), VersionNum);
 
-
-
-
     // [39] element ::= EmptyElemTag | STag content ETag
     // TODO spec incomplete
     let mut element_notempty = ParsingRule::new("STag content ETag".to_owned(), RuleType::Sequence);
@@ -473,18 +504,15 @@ pub fn prepare_rules<'a>() -> Parser {
     element.children_names.push("STag content ETag".to_owned());
     rule_nameRegistry.insert(element.rule_name.clone(), element);
 
-
-
     // [40] STag ::= '<' Name (S Attribute)* S? '>'
     let mut STag = ParsingRule::new("STag".to_owned(), RuleType::Sequence);
     STag.is_chunkable = false;
-    STag.children_names.push("<".to_owned());  //'<' Name (S Attribute)* S? '>'
+    STag.children_names.push("<".to_owned()); //'<' Name (S Attribute)* S? '>'
     STag.children_names.push("Name".to_owned());
     STag.children_names.push("(S Attribute)*".to_owned());
     STag.children_names.push("S?".to_owned());
     STag.children_names.push(">".to_owned());
     rule_nameRegistry.insert(STag.rule_name.clone(), STag);
-
 
     // [41] Attribute ::= Name Eq AttValue
     let mut Attribute = ParsingRule::new("Attribute".to_owned(), RuleType::Sequence);
@@ -494,22 +522,29 @@ pub fn prepare_rules<'a>() -> Parser {
     rule_nameRegistry.insert(Attribute.rule_name.clone(), Attribute);
 
     let mut Attribute_optional = ParsingRule::new("Attribute?".to_owned(), RuleType::Optional);
-    Attribute_optional.children_names.push("Attribute".to_owned());
+    Attribute_optional
+        .children_names
+        .push("Attribute".to_owned());
     rule_nameRegistry.insert(Attribute_optional.rule_name.clone(), Attribute_optional);
 
     // (S Attribute)
     let mut Attribute_after_s = ParsingRule::new("(S Attribute)".to_owned(), RuleType::Sequence);
     Attribute_after_s.children_names.push("S".to_owned());
-    Attribute_after_s.children_names.push("Attribute".to_owned());
+    Attribute_after_s
+        .children_names
+        .push("Attribute".to_owned());
     rule_nameRegistry.insert(Attribute_after_s.rule_name.clone(), Attribute_after_s);
 
     // (S Attribute)*
-    let mut Attribute_after_s_zom = ParsingRule::new("(S Attribute)*".to_owned(),
-                                                     RuleType::ZeroOrMore);
-    Attribute_after_s_zom.children_names.push("(S Attribute)".to_owned());
-    rule_nameRegistry.insert(Attribute_after_s_zom.rule_name.clone(),
-                             Attribute_after_s_zom);
-
+    let mut Attribute_after_s_zom =
+        ParsingRule::new("(S Attribute)*".to_owned(), RuleType::ZeroOrMore);
+    Attribute_after_s_zom
+        .children_names
+        .push("(S Attribute)".to_owned());
+    rule_nameRegistry.insert(
+        Attribute_after_s_zom.rule_name.clone(),
+        Attribute_after_s_zom,
+    );
 
     // [42] ETag ::= '</' Name S? '>'
     let mut ETag = ParsingRule::new("ETag".to_owned(), RuleType::Sequence);
@@ -521,16 +556,14 @@ pub fn prepare_rules<'a>() -> Parser {
 
     rule_nameRegistry.insert(ETag.rule_name.clone(), ETag);
 
-
-
-
     // [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
     // TODO unimplemented spec
     // need to seperate circular ref-seperated..
     // put element to last child for reducing backtrack needs
-    let mut content_inside = ParsingRule::new("(element | Reference | CDSect | PI | Comment)"
-                                                  .to_owned(),
-                                              RuleType::Or);
+    let mut content_inside = ParsingRule::new(
+        "(element | Reference | CDSect | PI | Comment)".to_owned(),
+        RuleType::Or,
+    );
     content_inside.children_names.push("Reference".to_owned());
     content_inside.children_names.push("CDSect".to_owned());
     content_inside.children_names.push("Comment".to_owned());
@@ -538,26 +571,37 @@ pub fn prepare_rules<'a>() -> Parser {
     // TODO add child here
     rule_nameRegistry.insert(content_inside.rule_name.clone(), content_inside);
 
-
-    let mut content_inside_and_CharData = ParsingRule::new("(content_inside CharData?)".to_owned(),
-                                                           RuleType::Sequence);
+    let mut content_inside_and_CharData =
+        ParsingRule::new("(content_inside CharData?)".to_owned(), RuleType::Sequence);
     // ruleRegistry.insert(elementAndCharData.rule_name.clone(), rule_vec.len());
-    content_inside_and_CharData.children_names
+    content_inside_and_CharData
+        .children_names
         .push("(element | Reference | CDSect | PI | Comment)".to_owned());
-    content_inside_and_CharData.children_names.push("CharData?".to_owned());
-    rule_nameRegistry.insert(content_inside_and_CharData.rule_name.clone(),
-                             content_inside_and_CharData);
+    content_inside_and_CharData
+        .children_names
+        .push("CharData?".to_owned());
+    rule_nameRegistry.insert(
+        content_inside_and_CharData.rule_name.clone(),
+        content_inside_and_CharData,
+    );
 
-    let mut content_inside_and_CharData_zom = ParsingRule::new("(content_inside CharData?)*"
-                                                                   .to_owned(),
-                                                               RuleType::ZeroOrMore);
-    content_inside_and_CharData_zom.children_names.push("(content_inside CharData?)".to_owned());
-    rule_nameRegistry.insert(content_inside_and_CharData_zom.rule_name.clone(),
-                             content_inside_and_CharData_zom);
+    let mut content_inside_and_CharData_zom = ParsingRule::new(
+        "(content_inside CharData?)*".to_owned(),
+        RuleType::ZeroOrMore,
+    );
+    content_inside_and_CharData_zom
+        .children_names
+        .push("(content_inside CharData?)".to_owned());
+    rule_nameRegistry.insert(
+        content_inside_and_CharData_zom.rule_name.clone(),
+        content_inside_and_CharData_zom,
+    );
 
     let mut content = ParsingRule::new("content".to_owned(), RuleType::Sequence);
     content.children_names.push("CharData?".to_owned());
-    content.children_names.push("(content_inside CharData?)*".to_owned());
+    content
+        .children_names
+        .push("(content_inside CharData?)*".to_owned());
     rule_nameRegistry.insert(content.rule_name.clone(), content);
 
     let mut content2 = ParsingRule::new("content?".to_owned(), RuleType::Optional);
@@ -575,12 +619,13 @@ pub fn prepare_rules<'a>() -> Parser {
     EmptyElemTag.is_chunkable = false;
     EmptyElemTag.children_names.push("<".to_owned());
     EmptyElemTag.children_names.push("Name".to_owned());
-    EmptyElemTag.children_names.push("(S Attribute)*".to_owned());
+    EmptyElemTag
+        .children_names
+        .push("(S Attribute)*".to_owned());
     EmptyElemTag.children_names.push("S?".to_owned());
     EmptyElemTag.children_names.push("'/>'".to_owned());
 
     rule_nameRegistry.insert(EmptyElemTag.rule_name.clone(), EmptyElemTag);
-
 
     // [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
     let mut CharRef_ampdial = ParsingRule::new("'&#'".to_owned(), RuleType::CharSequence);
@@ -620,12 +665,18 @@ pub fn prepare_rules<'a>() -> Parser {
     rule_nameRegistry.insert(CharRef_09af.rule_name.clone(), CharRef_09af);
 
     let mut CharRef_09af_zom = ParsingRule::new("[0-9a-fA-F]*".to_owned(), RuleType::ZeroOrMore);
-    CharRef_09af_zom.children_names.push("[0-9a-fA-F]".to_owned());
+    CharRef_09af_zom
+        .children_names
+        .push("[0-9a-fA-F]".to_owned());
     rule_nameRegistry.insert(CharRef_09af_zom.rule_name.clone(), CharRef_09af_zom);
 
     let mut CharRef_09af_oom = ParsingRule::new("[0-9a-fA-F]+".to_owned(), RuleType::Sequence);
-    CharRef_09af_oom.children_names.push("[0-9a-fA-F]".to_owned());
-    CharRef_09af_oom.children_names.push("[0-9a-fA-F]*".to_owned());
+    CharRef_09af_oom
+        .children_names
+        .push("[0-9a-fA-F]".to_owned());
+    CharRef_09af_oom
+        .children_names
+        .push("[0-9a-fA-F]*".to_owned());
     rule_nameRegistry.insert(CharRef_09af_oom.rule_name.clone(), CharRef_09af_oom);
 
     // '&#x' [0-9a-fA-F]+ ';'
@@ -640,7 +691,6 @@ pub fn prepare_rules<'a>() -> Parser {
     CharRef.children_names.push("CharRef_alt_2".to_owned());
     rule_nameRegistry.insert(CharRef.rule_name.clone(), CharRef);
 
-
     // [67] Reference ::= EntityRef | CharRef
     let mut Reference = ParsingRule::new("Reference".to_owned(), RuleType::Or);
     Reference.children_names.push("EntityRef".to_owned());
@@ -649,7 +699,9 @@ pub fn prepare_rules<'a>() -> Parser {
 
     // [67.5] Reference in AttVal ::= EntityRef | CharRef
     let mut ReferenceInAttrVal = ParsingRule::new("ReferenceInAttrVal".to_owned(), RuleType::Or);
-    ReferenceInAttrVal.children_names.push("EntityRef".to_owned());
+    ReferenceInAttrVal
+        .children_names
+        .push("EntityRef".to_owned());
     ReferenceInAttrVal.children_names.push("CharRef".to_owned());
     rule_nameRegistry.insert(ReferenceInAttrVal.rule_name.clone(), ReferenceInAttrVal);
 
@@ -668,50 +720,66 @@ pub fn prepare_rules<'a>() -> Parser {
     rule_nameRegistry.insert(PEReference.rule_name.clone(), PEReference);
 
     // [80] EncodingDecl EncodingDecl	   ::=   	S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
-    let mut EncodingDecl_encoding = ParsingRule::new("'encoding'".to_owned(),
-                                                     RuleType::CharSequence);
+    let mut EncodingDecl_encoding =
+        ParsingRule::new("'encoding'".to_owned(), RuleType::CharSequence);
     EncodingDecl_encoding.expected_chars = "encoding".to_owned().chars().collect();
-    rule_nameRegistry.insert(EncodingDecl_encoding.rule_name.clone(),
-                             EncodingDecl_encoding);
+    rule_nameRegistry.insert(
+        EncodingDecl_encoding.rule_name.clone(),
+        EncodingDecl_encoding,
+    );
 
-    let mut EncodingDecl_encname_1 = ParsingRule::new("EncodingDecl_encname_1".to_owned(),
-                                                      RuleType::Sequence);
+    let mut EncodingDecl_encname_1 =
+        ParsingRule::new("EncodingDecl_encname_1".to_owned(), RuleType::Sequence);
     EncodingDecl_encname_1.children_names.push("\"".to_owned());
-    EncodingDecl_encname_1.children_names.push("EncName".to_owned());
+    EncodingDecl_encname_1
+        .children_names
+        .push("EncName".to_owned());
     EncodingDecl_encname_1.children_names.push("\"".to_owned());
-    rule_nameRegistry.insert(EncodingDecl_encname_1.rule_name.clone(),
-                             EncodingDecl_encname_1);
+    rule_nameRegistry.insert(
+        EncodingDecl_encname_1.rule_name.clone(),
+        EncodingDecl_encname_1,
+    );
 
-    let mut EncodingDecl_encname_2 = ParsingRule::new("EncodingDecl_encname_2".to_owned(),
-                                                      RuleType::Sequence);
+    let mut EncodingDecl_encname_2 =
+        ParsingRule::new("EncodingDecl_encname_2".to_owned(), RuleType::Sequence);
     EncodingDecl_encname_2.children_names.push("'".to_owned());
-    EncodingDecl_encname_2.children_names.push("EncName".to_owned());
+    EncodingDecl_encname_2
+        .children_names
+        .push("EncName".to_owned());
     EncodingDecl_encname_2.children_names.push("'".to_owned());
-    rule_nameRegistry.insert(EncodingDecl_encname_2.rule_name.clone(),
-                             EncodingDecl_encname_2);
+    rule_nameRegistry.insert(
+        EncodingDecl_encname_2.rule_name.clone(),
+        EncodingDecl_encname_2,
+    );
 
-    let mut EncodingDecl_encname = ParsingRule::new("EncodingDecl_encname".to_owned(),
-                                                    RuleType::Or);
-    EncodingDecl_encname.children_names.push("EncodingDecl_encname_1".to_owned());
-    EncodingDecl_encname.children_names.push("EncodingDecl_encname_2".to_owned());
+    let mut EncodingDecl_encname =
+        ParsingRule::new("EncodingDecl_encname".to_owned(), RuleType::Or);
+    EncodingDecl_encname
+        .children_names
+        .push("EncodingDecl_encname_1".to_owned());
+    EncodingDecl_encname
+        .children_names
+        .push("EncodingDecl_encname_2".to_owned());
     rule_nameRegistry.insert(EncodingDecl_encname.rule_name.clone(), EncodingDecl_encname);
 
     let mut EncodingDecl = ParsingRule::new("EncodingDecl".to_owned(), RuleType::Sequence);
     EncodingDecl.children_names.push("S".to_owned());
     EncodingDecl.children_names.push("'encoding'".to_owned());
     EncodingDecl.children_names.push("Eq".to_owned());
-    EncodingDecl.children_names.push("EncodingDecl_encname".to_owned());
+    EncodingDecl
+        .children_names
+        .push("EncodingDecl_encname".to_owned());
     rule_nameRegistry.insert(EncodingDecl.rule_name.clone(), EncodingDecl);
 
-    let mut EncodingDecl_optional = ParsingRule::new("EncodingDecl?".to_owned(),
-                                                     RuleType::Optional);
-    EncodingDecl_optional.children_names.push("EncodingDecl".to_owned());
-    rule_nameRegistry.insert(EncodingDecl_optional.rule_name.clone(),
-                             EncodingDecl_optional);
-
-
-
-
+    let mut EncodingDecl_optional =
+        ParsingRule::new("EncodingDecl?".to_owned(), RuleType::Optional);
+    EncodingDecl_optional
+        .children_names
+        .push("EncodingDecl".to_owned());
+    rule_nameRegistry.insert(
+        EncodingDecl_optional.rule_name.clone(),
+        EncodingDecl_optional,
+    );
 
     // [81] EncName
     let mut EncName_az = ParsingRule::new("[A-Za-z]".to_owned(), RuleType::Chars);
@@ -731,25 +799,29 @@ pub fn prepare_rules<'a>() -> Parser {
     EncName_hyphen.expected_chars.push('-');
     rule_nameRegistry.insert(EncName_hyphen.rule_name.clone(), EncName_hyphen);
 
-    let mut EncName_part2_single = ParsingRule::new("([A-Za-z0-9._] | '-')".to_owned(),
-                                                    RuleType::Or);
+    let mut EncName_part2_single =
+        ParsingRule::new("([A-Za-z0-9._] | '-')".to_owned(), RuleType::Or);
     EncName_part2_single.children_names.push("-".to_owned());
-    EncName_part2_single.children_names.push("[A-Za-z0-9._]".to_owned());
+    EncName_part2_single
+        .children_names
+        .push("[A-Za-z0-9._]".to_owned());
     rule_nameRegistry.insert(EncName_part2_single.rule_name.clone(), EncName_part2_single);
 
-    let mut EncName_part2 = ParsingRule::new("([A-Za-z0-9._] | '-')*".to_owned(),
-                                             RuleType::ZeroOrMore);
-    EncName_part2.children_names.push("([A-Za-z0-9._] | '-')".to_owned());
+    let mut EncName_part2 =
+        ParsingRule::new("([A-Za-z0-9._] | '-')*".to_owned(), RuleType::ZeroOrMore);
+    EncName_part2
+        .children_names
+        .push("([A-Za-z0-9._] | '-')".to_owned());
     rule_nameRegistry.insert(EncName_part2.rule_name.clone(), EncName_part2);
 
     let mut EncName = ParsingRule::new("EncName".to_owned(), RuleType::Sequence);
     EncName.children_names.push("[A-Za-z]".to_owned());
-    EncName.children_names.push("([A-Za-z0-9._] | '-')*".to_owned());
+    EncName
+        .children_names
+        .push("([A-Za-z0-9._] | '-')*".to_owned());
     rule_nameRegistry.insert(EncName.rule_name.clone(), EncName);
 
-
     for (rule_name, rule) in rule_nameRegistry.into_iter() {
-
         ruleRegistry.insert(rule_name, rule_vec.len());
         rule_vec.push(rule);
     }
@@ -760,8 +832,6 @@ pub fn prepare_rules<'a>() -> Parser {
                 Some(child_rule_id) => rule.children.push(*child_rule_id),
                 None => println!("{} rule not found", child_rule_name),
             }
-
-
         }
     }
 
@@ -780,28 +850,29 @@ pub enum ParsingResult {
 
 pub trait ParsingPassLogStream {
     fn try(&mut self, rule_name: String, starting_pos: usize) -> ();
-    fn pass(&mut self,
-            rule_name: String,
-            chars: &Vec<char>,
-            starting_pos: usize,
-            ending_pos: usize)
-            -> ();
-    fn offset(&mut self, usize)->();
+    fn pass(
+        &mut self,
+        rule_name: String,
+        chars: &Vec<char>,
+        starting_pos: usize,
+        ending_pos: usize,
+    ) -> ();
+    fn offset(&mut self, usize) -> ();
 }
 
 // state_vec (child_no,child starting pos,no backtrack required)
-pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
-                                                rule: &ParsingRule,
-                                                char_vector: &Vec<char>,
-                                                starting_pos: usize,
-                                                // use where char vec is used
-                                                offset: usize,
-                                                // eof
-                                                resume_state_vec: &mut Vec<(usize, usize, bool)>,
-                                                state_vec: &mut Vec<(usize, usize, bool)>,
-                                                mut logger: T)
-                                                -> (T, ParsingResult) {
-
+pub fn parse_with_rule<T: ParsingPassLogStream>(
+    rule_vec: &Vec<ParsingRule>,
+    rule: &ParsingRule,
+    char_vector: &Vec<char>,
+    starting_pos: usize,
+    // use where char vec is used
+    offset: usize,
+    // eof
+    resume_state_vec: &mut Vec<(usize, usize, bool)>,
+    state_vec: &mut Vec<(usize, usize, bool)>,
+    mut logger: T,
+) -> (T, ParsingResult) {
     logger.try(rule.rule_name.clone(), starting_pos);
 
     match rule.rule_type {
@@ -811,24 +882,25 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
             }
             let c = char_vector[starting_pos - offset];
 
-
             for range in &rule.expected_char_ranges {
-
-
                 if range.0 <= c && c <= range.1 {
-                    logger.pass(rule.rule_name.clone(),
-                                char_vector,
-                                starting_pos,
-                                starting_pos + 1);
+                    logger.pass(
+                        rule.rule_name.clone(),
+                        char_vector,
+                        starting_pos,
+                        starting_pos + 1,
+                    );
                     return (logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
                 }
             }
             for check_char in &rule.expected_chars {
                 if *check_char == c {
-                    logger.pass(rule.rule_name.clone(),
-                                char_vector,
-                                starting_pos,
-                                starting_pos + 1);
+                    logger.pass(
+                        rule.rule_name.clone(),
+                        char_vector,
+                        starting_pos,
+                        starting_pos + 1,
+                    );
                     return (logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
                 }
             }
@@ -852,10 +924,12 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                     return (logger, ParsingResult::Fail);
                 }
             }
-            logger.pass(rule.rule_name.clone(),
-                        char_vector,
-                        starting_pos,
-                        starting_pos + 1);
+            logger.pass(
+                rule.rule_name.clone(),
+                char_vector,
+                starting_pos,
+                starting_pos + 1,
+            );
             return (logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
         }
 
@@ -873,10 +947,12 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                     return (logger, ParsingResult::Fail);
                 }
             }
-            logger.pass(rule.rule_name.clone(),
-                        char_vector,
-                        starting_pos,
-                        new_starting_pos);
+            logger.pass(
+                rule.rule_name.clone(),
+                char_vector,
+                starting_pos,
+                new_starting_pos,
+            );
             return (logger, ParsingResult::Pass(starting_pos, new_starting_pos));
         }
         RuleType::ZeroOrMore => {
@@ -885,14 +961,16 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
             let mut new_starting_pos = starting_pos;
 
             while !fail {
-                let result = parse_with_rule(rule_vec,
-                                             new_rule,
-                                             &char_vector,
-                                             new_starting_pos,
-                                             offset,
-                                             resume_state_vec,
-                                             state_vec,
-                                             logger);
+                let result = parse_with_rule(
+                    rule_vec,
+                    new_rule,
+                    &char_vector,
+                    new_starting_pos,
+                    offset,
+                    resume_state_vec,
+                    state_vec,
+                    logger,
+                );
                 logger = result.0;
                 match result.1 {
                     ParsingResult::Fail => fail = true,
@@ -902,10 +980,12 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                     }
                 }
             }
-            logger.pass(rule.rule_name.clone(),
-                        char_vector,
-                        starting_pos,
-                        new_starting_pos);
+            logger.pass(
+                rule.rule_name.clone(),
+                char_vector,
+                starting_pos,
+                new_starting_pos,
+            );
             return (logger, ParsingResult::Pass(starting_pos, new_starting_pos));
         }
 
@@ -935,17 +1015,18 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                     state_vec.push((child_no2, new_starting_pos, false));
                 }
 
-
                 let new_rule = &rule_vec[*rule_id];
 
-                let result = parse_with_rule(rule_vec,
-                                             new_rule,
-                                             &char_vector,
-                                             new_starting_pos,
-                                             offset,
-                                             resume_state_vec,
-                                             state_vec,
-                                             logger);
+                let result = parse_with_rule(
+                    rule_vec,
+                    new_rule,
+                    &char_vector,
+                    new_starting_pos,
+                    offset,
+                    resume_state_vec,
+                    state_vec,
+                    logger,
+                );
                 logger = result.0;
                 match result.1 {
                     ParsingResult::Fail => {
@@ -961,10 +1042,12 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                 }
                 state_vec.pop();
             }
-            logger.pass(rule.rule_name.clone(),
-                        char_vector,
-                        starting_pos,
-                        new_starting_pos);
+            logger.pass(
+                rule.rule_name.clone(),
+                char_vector,
+                starting_pos,
+                new_starting_pos,
+            );
             return (logger, ParsingResult::Pass(starting_pos, new_starting_pos));
         }
 
@@ -987,17 +1070,18 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                 }
                 state_vec.push((child_no2, rule_starting_pos, no_backtrack_required));
                 let new_rule = &rule_vec[*rule_id];
-                let result = parse_with_rule(rule_vec,
-                                             new_rule,
-                                             &char_vector,
-                                             rule_starting_pos,
-                                             offset,
-                                             resume_state_vec,
-                                             state_vec,
-                                             logger);
+                let result = parse_with_rule(
+                    rule_vec,
+                    new_rule,
+                    &char_vector,
+                    rule_starting_pos,
+                    offset,
+                    resume_state_vec,
+                    state_vec,
+                    logger,
+                );
                 logger = result.0;
                 match result.1 {
-
                     ParsingResult::Pass(s_pos, e_pos) => {
                         logger.pass(rule.rule_name.clone(), char_vector, s_pos, e_pos);
                         state_vec.pop();
@@ -1021,24 +1105,28 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
             // i cant think of any case that needs pass or fail location for second test
             let first_rule = &rule_vec[rule.children[0]];
             let second_rule = &rule_vec[rule.children[1]];
-            let result = parse_with_rule(rule_vec,
-                                         first_rule,
-                                         &char_vector,
-                                         starting_pos,
-                                         offset,
-                                         resume_state_vec,
-                                         state_vec,
-                                         logger);
+            let result = parse_with_rule(
+                rule_vec,
+                first_rule,
+                &char_vector,
+                starting_pos,
+                offset,
+                resume_state_vec,
+                state_vec,
+                logger,
+            );
             match result.1 {
                 ParsingResult::Pass(s_pos, e_pos) => {
-                    let result2 = parse_with_rule(rule_vec,
-                                                  second_rule,
-                                                  &char_vector,
-                                                  starting_pos,
-                                                  offset,
-                                                  resume_state_vec,
-                                                  state_vec,
-                                                  result.0);
+                    let result2 = parse_with_rule(
+                        rule_vec,
+                        second_rule,
+                        &char_vector,
+                        starting_pos,
+                        offset,
+                        resume_state_vec,
+                        state_vec,
+                        result.0,
+                    );
                     logger = result2.0;
                     match result2.1 {
                         ParsingResult::Fail => {
@@ -1047,11 +1135,9 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                         }
                         ParsingResult::Pass(_, _) => return (logger, ParsingResult::Fail),
                         ParsingResult::EOF => {
-
                             return (logger, ParsingResult::EOF);
                         }
                     }
-
                 }
                 ParsingResult::Fail => return (result.0, ParsingResult::Fail),
                 ParsingResult::EOF => {
@@ -1059,30 +1145,31 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                     return (result.0, ParsingResult::EOF);
                 }
             }
-
         }
         RuleType::Optional => {
-
-            let result = parse_with_rule(rule_vec,
-                                         &rule_vec[rule.children[0]],
-                                         &char_vector,
-                                         starting_pos,
-                                         offset,
-                                         resume_state_vec,
-                                         state_vec,
-                                         logger);
+            let result = parse_with_rule(
+                rule_vec,
+                &rule_vec[rule.children[0]],
+                &char_vector,
+                starting_pos,
+                offset,
+                resume_state_vec,
+                state_vec,
+                logger,
+            );
             logger = result.0;
             match result.1 {
-
                 ParsingResult::Pass(s_pos, e_pos) => {
                     logger.pass(rule.rule_name.clone(), char_vector, s_pos, e_pos);
                     return (logger, result.1);
                 }
                 ParsingResult::Fail => {
-                    logger.pass(rule.rule_name.clone(),
-                                char_vector,
-                                starting_pos,
-                                starting_pos);
+                    logger.pass(
+                        rule.rule_name.clone(),
+                        char_vector,
+                        starting_pos,
+                        starting_pos,
+                    );
                     return (logger, ParsingResult::Pass(starting_pos, starting_pos));
                 }
                 ParsingResult::EOF => {
@@ -1090,32 +1177,29 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(rule_vec: &Vec<ParsingRule>,
                     return (logger, ParsingResult::EOF);
                 }
             }
-
         }
         // unreachable
-          _ => {
-         println!("UNIMPLEMENTED PARSER FOR TYPE!" );
-         return (logger, ParsingResult::Fail);
-         
-         }
+        _ => {
+            println!("UNIMPLEMENTED PARSER FOR TYPE!");
+            return (logger, ParsingResult::Fail);
+        }
     }
 }
 
-pub fn parse_with_rule2<T: ParsingPassLogStream,R:Read>(rule_vec: &Vec<ParsingRule>,
-                                                rule: &ParsingRule,
-                                                iter: &mut itertools::MultiPeek<char_iter::Chars<R>>,
-                                                //char_vector: &Vec<char>,
-                                                starting_pos: usize,
-                                                // use where char vec is used
-                                                mut offset: usize,
-                                                // eof
-                                                resume_state_vec: &mut Vec<(usize, usize, bool)>,
-                                                state_vec: &mut Vec<(usize, usize, bool)>,
-                                                mut logger: T)
-                                                //offset+, logger, parsingresult
-                                                -> (usize,T, ParsingResult) {
-
-let mut offset_plus = 0;
+pub fn parse_with_rule2<T: ParsingPassLogStream, R: Read>(
+    rule_vec: &Vec<ParsingRule>,
+    rule: &ParsingRule,
+    iter: &mut itertools::MultiPeek<char_iter::Chars<R>>,
+    //char_vector: &Vec<char>,
+    starting_pos: usize,
+    // use where char vec is used
+    mut offset: usize,
+    // eof
+    resume_state_vec: &mut Vec<(usize, usize, bool)>,
+    state_vec: &mut Vec<(usize, usize, bool)>,
+    mut logger: T,
+) -> (usize, T, ParsingResult) {
+    let mut offset_plus = 0;
 
     logger.try(rule.rule_name.clone(), starting_pos);
 
@@ -1125,30 +1209,48 @@ let mut offset_plus = 0;
                 return (logger, ParsingResult::EOF);
             }*/
             //let c = char_vector[starting_pos ];
-            let c = peek_nth(iter, starting_pos-offset);
+            let c = peek_nth(iter, starting_pos - offset);
 
             for range in &rule.expected_char_ranges {
-
-
                 if range.0 <= c && c <= range.1 {
-                    logger.pass(rule.rule_name.clone(),
-                                &peek_collect_start_end(iter, starting_pos-offset, starting_pos+1-offset),
-                                starting_pos,
-                                starting_pos + 1);
-                    return (offset_plus,logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
+                    logger.pass(
+                        rule.rule_name.clone(),
+                        &peek_collect_start_end(
+                            iter,
+                            starting_pos - offset,
+                            starting_pos + 1 - offset,
+                        ),
+                        starting_pos,
+                        starting_pos + 1,
+                    );
+                    return (
+                        offset_plus,
+                        logger,
+                        ParsingResult::Pass(starting_pos, starting_pos + 1),
+                    );
                 }
             }
             for check_char in &rule.expected_chars {
                 if *check_char == c {
-                    logger.pass(rule.rule_name.clone(),
-                                &peek_collect_start_end(iter, starting_pos-offset, starting_pos+1-offset),
-                                starting_pos,
-                                starting_pos + 1);
-                    return (offset_plus,logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
+                    logger.pass(
+                        rule.rule_name.clone(),
+                        &peek_collect_start_end(
+                            iter,
+                            starting_pos - offset,
+                            starting_pos + 1 - offset,
+                        ),
+                        starting_pos,
+                        starting_pos + 1,
+                    );
+                    return (
+                        offset_plus,
+                        logger,
+                        ParsingResult::Pass(starting_pos, starting_pos + 1),
+                    );
                 }
             }
 
-            (offset_plus,logger, ParsingResult::Fail)
+            (offset_plus, logger, ParsingResult::Fail)
         }
 
         RuleType::CharsNot => {
@@ -1156,22 +1258,28 @@ let mut offset_plus = 0;
                 return (logger, ParsingResult::EOF);
             }*/
             //let c = char_vector[starting_pos ];
-            let c = peek_nth(iter, starting_pos-offset);
+            let c = peek_nth(iter, starting_pos - offset);
             for range in &rule.expected_char_ranges {
                 if range.0 <= c && c <= range.1 {
-                    return (offset_plus,logger, ParsingResult::Fail);
+                    return (offset_plus, logger, ParsingResult::Fail);
                 }
             }
             for check_char in &rule.expected_chars {
                 if *check_char == c {
-                    return (offset_plus,logger, ParsingResult::Fail);
+                    return (offset_plus, logger, ParsingResult::Fail);
                 }
             }
-            logger.pass(rule.rule_name.clone(),
-                        &peek_collect_start_end(iter, starting_pos-offset, starting_pos+1-offset),
-                        starting_pos,
-                        starting_pos + 1);
-            return (offset_plus,logger, ParsingResult::Pass(starting_pos, starting_pos + 1));
+            logger.pass(
+                rule.rule_name.clone(),
+                &peek_collect_start_end(iter, starting_pos - offset, starting_pos + 1 - offset),
+                starting_pos,
+                starting_pos + 1,
+            );
+            return (
+                offset_plus,
+                logger,
+                ParsingResult::Pass(starting_pos, starting_pos + 1),
+            );
         }
 
         RuleType::CharSequence => {
@@ -1181,18 +1289,24 @@ let mut offset_plus = 0;
                     return (logger, ParsingResult::EOF);
                 }*/
                 //let c = char_vector[new_starting_pos ];
-                let c = peek_nth(iter, new_starting_pos-offset);
+                let c = peek_nth(iter, new_starting_pos - offset);
                 if *check_char == c {
                     new_starting_pos += 1;
                 } else {
-                    return (offset_plus,logger, ParsingResult::Fail);
+                    return (offset_plus, logger, ParsingResult::Fail);
                 }
             }
-            logger.pass(rule.rule_name.clone(),
-                        &peek_collect_start_end(iter, starting_pos-offset, new_starting_pos-offset),
-                        starting_pos,
-                        new_starting_pos);
-            return (offset_plus,logger, ParsingResult::Pass(starting_pos, new_starting_pos));
+            logger.pass(
+                rule.rule_name.clone(),
+                &peek_collect_start_end(iter, starting_pos - offset, new_starting_pos - offset),
+                starting_pos,
+                new_starting_pos,
+            );
+            return (
+                offset_plus,
+                logger,
+                ParsingResult::Pass(starting_pos, new_starting_pos),
+            );
         }
         RuleType::ZeroOrMore => {
             let new_rule = &rule_vec[rule.children[0]];
@@ -1200,17 +1314,18 @@ let mut offset_plus = 0;
             let mut new_starting_pos = starting_pos;
 
             while !fail {
-                let result = parse_with_rule2(rule_vec,
-                                             new_rule,
-                                             iter,
-                                             //&char_vector,
-                                             new_starting_pos,
-                                             offset,
-                                             resume_state_vec,
-                                             state_vec,
-                                             logger);
+                let result = parse_with_rule2(
+                    rule_vec,
+                    new_rule,
+                    iter,
+                    //&char_vector,
+                    new_starting_pos,
+                    offset,
+                    resume_state_vec,
+                    state_vec,
+                    logger,
+                );
                 //if(result.0;
-                
 
                 logger = result.1;
                 match result.2 {
@@ -1218,27 +1333,35 @@ let mut offset_plus = 0;
                     ParsingResult::Pass(_, e_pos) => {
                         offset_plus += result.0;
                         offset += result.0;
-                        new_starting_pos = e_pos},
+                        new_starting_pos = e_pos
+                    }
                     ParsingResult::EOF => {
-                        return (offset_plus,logger, ParsingResult::EOF);
+                        return (offset_plus, logger, ParsingResult::EOF);
                     }
                 }
             }
 
-            if starting_pos<=offset{
-                logger.pass(rule.rule_name.clone(),
-
-                &Vec::new(),
-                starting_pos,
-                new_starting_pos);
-            }else{
-                logger.pass(rule.rule_name.clone(),
-                    &peek_collect_start_end(iter, starting_pos-offset, new_starting_pos-offset),
+            if starting_pos <= offset {
+                logger.pass(
+                    rule.rule_name.clone(),
+                    &Vec::new(),
                     starting_pos,
-                    new_starting_pos);
+                    new_starting_pos,
+                );
+            } else {
+                logger.pass(
+                    rule.rule_name.clone(),
+                    &peek_collect_start_end(iter, starting_pos - offset, new_starting_pos - offset),
+                    starting_pos,
+                    new_starting_pos,
+                );
             }
-            
-            return (offset_plus,logger, ParsingResult::Pass(starting_pos, new_starting_pos));
+
+            return (
+                offset_plus,
+                logger,
+                ParsingResult::Pass(starting_pos, new_starting_pos),
+            );
         }
 
         RuleType::Sequence => {
@@ -1267,62 +1390,71 @@ let mut offset_plus = 0;
                     state_vec.push((child_no2, new_starting_pos, false));
                 }
 
-
                 let new_rule = &rule_vec[*rule_id];
 
-                let result = parse_with_rule2(rule_vec,
-                                             new_rule,
-                                              iter,
-                                             //&char_vector,
-                                             new_starting_pos,
-                                             offset,
-                                             resume_state_vec,
-                                             state_vec,
-                                             logger);
-                
+                let result = parse_with_rule2(
+                    rule_vec,
+                    new_rule,
+                    iter,
+                    //&char_vector,
+                    new_starting_pos,
+                    offset,
+                    resume_state_vec,
+                    state_vec,
+                    logger,
+                );
+
                 logger = result.1;
                 match result.2 {
                     ParsingResult::Fail => {
                         state_vec.pop();
-                        return (0,logger, ParsingResult::Fail);
+                        return (0, logger, ParsingResult::Fail);
                     }
-                    ParsingResult::Pass(_, e_pos) =>{ 
+                    ParsingResult::Pass(_, e_pos) => {
                         offset_plus += result.0;
                         offset += result.0;
-                        new_starting_pos = e_pos},
+                        new_starting_pos = e_pos
+                    }
                     ParsingResult::EOF => {
                         // dont call state_vec.pop();
                         logger.pass(rule.rule_name.clone(), &Vec::new(), starting_pos, 0);
-                        return (0,logger, ParsingResult::EOF);
+                        return (0, logger, ParsingResult::EOF);
                     }
                 }
                 state_vec.pop();
             }
 
-
             //println!("******{:?},{:?},{:?},{:?}",rule.rule_name.clone(),starting_pos,offset,new_starting_pos );
             //deleting unnecessary chars causes this:
-            if starting_pos<offset{
-                logger.pass(rule.rule_name.clone(),
-
-                &Vec::new(),
-                starting_pos,
-                new_starting_pos);
-            }else{
-                logger.pass(rule.rule_name.clone(),
-
-                &peek_collect_start_end(iter, starting_pos-offset, new_starting_pos-offset),
-                starting_pos,
-                new_starting_pos);
+            if starting_pos < offset {
+                logger.pass(
+                    rule.rule_name.clone(),
+                    &Vec::new(),
+                    starting_pos,
+                    new_starting_pos,
+                );
+            } else {
+                logger.pass(
+                    rule.rule_name.clone(),
+                    &peek_collect_start_end(iter, starting_pos - offset, new_starting_pos - offset),
+                    starting_pos,
+                    new_starting_pos,
+                );
             }
 
-            if rule.rule_name == "STag" || rule.rule_name == "EmptyElemTag" || rule.rule_name == "ETag" {
-                offset_plus = new_starting_pos-offset;
+            if rule.rule_name == "STag" || rule.rule_name == "EmptyElemTag"
+                || rule.rule_name == "ETag"
+            {
+                offset_plus = new_starting_pos - offset;
                 //println!("offset_plus: {:?}",offset_plus );
                 remove_nth(iter, offset_plus);
-                 logger.offset(offset_plus);
+                logger.offset(offset_plus);
             }
-            return (offset_plus,logger, ParsingResult::Pass(starting_pos, new_starting_pos));
+            return (
+                offset_plus,
+                logger,
+                ParsingResult::Pass(starting_pos, new_starting_pos),
+            );
         }
 
         RuleType::Or => {
@@ -1344,43 +1476,48 @@ let mut offset_plus = 0;
                 }
                 state_vec.push((child_no2, rule_starting_pos, no_backtrack_required));
                 let new_rule = &rule_vec[*rule_id];
-                let result = parse_with_rule2(rule_vec,
-                                             new_rule,
-                                              iter,
-                                             //&char_vector,
-                                             rule_starting_pos,
-                                             offset,
-                                             resume_state_vec,
-                                             state_vec,
-                                             logger);
+                let result = parse_with_rule2(
+                    rule_vec,
+                    new_rule,
+                    iter,
+                    //&char_vector,
+                    rule_starting_pos,
+                    offset,
+                    resume_state_vec,
+                    state_vec,
+                    logger,
+                );
 
-               
                 logger = result.1;
                 match result.2 {
-
                     ParsingResult::Pass(s_pos, e_pos) => {
                         offset_plus += result.0;
                         offset += result.0;
 
-                        if s_pos<offset{
-                            logger.pass(rule.rule_name.clone(), &Vec::new(), s_pos, e_pos);           
-                        }else{
-                            logger.pass(rule.rule_name.clone(),  &peek_collect_start_end(iter, s_pos-offset, e_pos-offset), s_pos, e_pos);
+                        if s_pos < offset {
+                            logger.pass(rule.rule_name.clone(), &Vec::new(), s_pos, e_pos);
+                        } else {
+                            logger.pass(
+                                rule.rule_name.clone(),
+                                &peek_collect_start_end(iter, s_pos - offset, e_pos - offset),
+                                s_pos,
+                                e_pos,
+                            );
                         }
 
                         state_vec.pop();
-                        return (offset_plus,logger, result.2);
+                        return (offset_plus, logger, result.2);
                     }
                     ParsingResult::Fail => (),
                     ParsingResult::EOF => {
                         // dont call state_vec.pop();
                         // state_vec.pop();
-                        return (offset_plus,logger, ParsingResult::EOF);
+                        return (offset_plus, logger, ParsingResult::EOF);
                     }
                 }
                 state_vec.pop();
             }
-            return (offset_plus,logger, ParsingResult::Fail);
+            return (offset_plus, logger, ParsingResult::Fail);
         }
 
         RuleType::WithException => {
@@ -1389,128 +1526,147 @@ let mut offset_plus = 0;
             // i cant think of any case that needs pass or fail location for second test
             let first_rule = &rule_vec[rule.children[0]];
             let second_rule = &rule_vec[rule.children[1]];
-            let result = parse_with_rule2(rule_vec,
-                                         first_rule,
-                                          iter,
-                                         //&char_vector,
-                                         starting_pos,
-                                         offset,
-                                         resume_state_vec,
-                                         state_vec,
-                                         logger);
+            let result = parse_with_rule2(
+                rule_vec,
+                first_rule,
+                iter,
+                //&char_vector,
+                starting_pos,
+                offset,
+                resume_state_vec,
+                state_vec,
+                logger,
+            );
             match result.2 {
                 ParsingResult::Pass(s_pos, e_pos) => {
-                    let result2 = parse_with_rule2(rule_vec,
-                                                  second_rule,
-                                                   iter,
-                                                  //&char_vector,
-                                                  starting_pos,
-                                                  offset,
-                                                  resume_state_vec,
-                                                  state_vec,
-                                                  result.1);
+                    let result2 = parse_with_rule2(
+                        rule_vec,
+                        second_rule,
+                        iter,
+                        //&char_vector,
+                        starting_pos,
+                        offset,
+                        resume_state_vec,
+                        state_vec,
+                        result.1,
+                    );
                     logger = result2.1;
                     match result2.2 {
                         ParsingResult::Fail => {
-                            logger.pass(rule.rule_name.clone(), &peek_collect_start_end(iter, s_pos-offset, e_pos-offset), s_pos, e_pos);
-                            return (offset_plus,logger, result.2);
+                            logger.pass(
+                                rule.rule_name.clone(),
+                                &peek_collect_start_end(iter, s_pos - offset, e_pos - offset),
+                                s_pos,
+                                e_pos,
+                            );
+                            return (offset_plus, logger, result.2);
                         }
-                        ParsingResult::Pass(_, _) => return (0,logger, ParsingResult::Fail),
+                        ParsingResult::Pass(_, _) => return (0, logger, ParsingResult::Fail),
                         ParsingResult::EOF => {
-
-                            return (offset_plus,logger, ParsingResult::EOF);
+                            return (offset_plus, logger, ParsingResult::EOF);
                         }
                     }
-
                 }
-                ParsingResult::Fail => return (offset_plus,result.1, ParsingResult::Fail),
+                ParsingResult::Fail => return (offset_plus, result.1, ParsingResult::Fail),
                 ParsingResult::EOF => {
                     // dont call state_vec.pop();
-                    return (offset_plus,result.1, ParsingResult::EOF);
+                    return (offset_plus, result.1, ParsingResult::EOF);
                 }
             }
-
         }
         RuleType::Optional => {
-
-            let result = parse_with_rule2(rule_vec,
-                                         &rule_vec[rule.children[0]],
-                                          iter,
-                                         //&char_vector,
-                                         starting_pos,
-                                        offset,
-                                         resume_state_vec,
-                                         state_vec,
-                                         logger);
+            let result = parse_with_rule2(
+                rule_vec,
+                &rule_vec[rule.children[0]],
+                iter,
+                //&char_vector,
+                starting_pos,
+                offset,
+                resume_state_vec,
+                state_vec,
+                logger,
+            );
 
             offset_plus += result.0;
             offset += result.0;
             logger = result.1;
             match result.2 {
-
                 ParsingResult::Pass(s_pos, e_pos) => {
                     //deleting unnecessary chars causes this:
-                    if s_pos<offset{
+                    if s_pos < offset {
                         logger.pass(rule.rule_name.clone(), &Vec::new(), 0, 0);
-                    }else{
-                        logger.pass(rule.rule_name.clone(), &peek_collect_start_end(iter, s_pos-offset, e_pos-offset), s_pos, e_pos);
-                            
+                    } else {
+                        logger.pass(
+                            rule.rule_name.clone(),
+                            &peek_collect_start_end(iter, s_pos - offset, e_pos - offset),
+                            s_pos,
+                            e_pos,
+                        );
                     }
 
-                    
-                    return (offset_plus,logger, result.2);
+                    return (offset_plus, logger, result.2);
                 }
                 ParsingResult::Fail => {
-                    logger.pass(rule.rule_name.clone(),
-                                &Vec::new(),
-                                starting_pos,
-                                starting_pos);
-                    return (0,logger, ParsingResult::Pass(starting_pos, starting_pos));
+                    logger.pass(
+                        rule.rule_name.clone(),
+                        &Vec::new(),
+                        starting_pos,
+                        starting_pos,
+                    );
+                    return (0, logger, ParsingResult::Pass(starting_pos, starting_pos));
                 }
                 ParsingResult::EOF => {
                     // burada state_vec.pop(); cagirmiyoruz
-                    return (offset_plus,logger, ParsingResult::EOF);
+                    return (offset_plus, logger, ParsingResult::EOF);
                 }
             }
-
         }
         // unreachable
-          _ => {
-         println!("UNIMPLEMENTED PARSER FOR TYPE!" );
-         return (offset_plus,logger, ParsingResult::Fail);
-         
-         }
+        _ => {
+            println!("UNIMPLEMENTED PARSER FOR TYPE!");
+            return (offset_plus, logger, ParsingResult::Fail);
+        }
     }
 }
 
-pub fn remove_nth<R:Read>(iter : &mut itertools::MultiPeek<char_iter::Chars<R>>, nth :usize) {
+pub fn remove_nth<R: Read>(iter: &mut itertools::MultiPeek<char_iter::Chars<R>>, nth: usize) {
     //println!("REMOVE USED:{:?}",nth );
-     iter.reset_peek();
-     for _ in 0..nth {
-          iter.next();
-        }
+    iter.reset_peek();
+    for _ in 0..nth {
+        iter.next();
+    }
 }
 
-pub fn peek_nth<R:Read>(iter : &mut itertools::MultiPeek<char_iter::Chars<R>>, nth :usize) -> char{
-     iter.reset_peek();
-     for _ in 0..nth {
-          iter.peek();
-        }
-    let cex = iter.peek().map(|x| x.as_ref().map(|y| y.clone()) ).unwrap().unwrap();
+pub fn peek_nth<R: Read>(iter: &mut itertools::MultiPeek<char_iter::Chars<R>>, nth: usize) -> char {
+    iter.reset_peek();
+    for _ in 0..nth {
+        iter.peek();
+    }
+    let cex = iter.peek()
+        .map(|x| x.as_ref().map(|y| y.clone()))
+        .unwrap()
+        .unwrap();
     return cex;
 }
 
 // [) convention?
-pub fn peek_collect_start_end<R:Read>(iter : &mut itertools::MultiPeek<char_iter::Chars<R>>, start:usize, end :usize) -> Vec<char>{
-     let mut char_vec = Vec::new();
-     iter.reset_peek();
-     for _ in 0..start{
-         iter.peek();
-     }
-     for _ in start..end {
-          let cex = iter.peek().map(|x| x.as_ref().map(|y| y.clone()) ).unwrap().unwrap();
-          char_vec.push(cex);
-        }
-    
+pub fn peek_collect_start_end<R: Read>(
+    iter: &mut itertools::MultiPeek<char_iter::Chars<R>>,
+    start: usize,
+    end: usize,
+) -> Vec<char> {
+    let mut char_vec = Vec::new();
+    iter.reset_peek();
+    for _ in 0..start {
+        iter.peek();
+    }
+    for _ in start..end {
+        let cex = iter.peek()
+            .map(|x| x.as_ref().map(|y| y.clone()))
+            .unwrap()
+            .unwrap();
+        char_vec.push(cex);
+    }
+
     return char_vec;
 }

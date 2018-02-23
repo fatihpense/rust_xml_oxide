@@ -17,19 +17,18 @@ pub fn remove_optional(parser: &mut Parser) {
     let parser_rule_vec_2 = parser.rule_vec.clone();
     let mut rule_name_registry_queue: HashMap<String, ParsingRule> = HashMap::new();
 
-
     for rule in parser.rule_vec.iter_mut() {
         let rule: &mut ParsingRule = rule;
         if rule.rule_type == RuleType::Sequence {
             //check if it contains optional?
             let mut containsoptional = false;
-            let mut optionals_str:String ="".to_owned();
+            let mut optionals_str: String = "".to_owned();
             for child_rule_name in &rule.children_names {
                 let crule: &ParsingRule =
                     &parser_rule_vec_2[*parser.rule_registry.get(child_rule_name).unwrap()];
                 if crule.rule_type == RuleType::Optional {
                     containsoptional = true;
-                    optionals_str = optionals_str +"+"+ &crule.rule_name.clone();
+                    optionals_str = optionals_str + "+" + &crule.rule_name.clone();
                 }
             }
             if containsoptional {
@@ -73,7 +72,6 @@ pub fn remove_optional(parser: &mut Parser) {
             }
         }
     }
-
 
     for (rule_name, rule) in rule_name_registry_queue.into_iter() {
         //println!("{:?}", rule_name);
@@ -119,10 +117,11 @@ pub fn remove_zeroormore(parser: &mut Parser) {
                         &parser_rule_vec_2[*parser.rule_registry.get(rulenamec).unwrap()];
                     if rulec.rule_type == RuleType::ZeroOrMore {
                         index = i;
-                        
+
                         rule_id += 1;
                         zom_orig_child_rule_name = rulec.children_names[0].clone();
-                        zom_rule_name = zom_orig_child_rule_name.clone()+ "-zomgen" + &rule_id.to_string();
+                        zom_rule_name =
+                            zom_orig_child_rule_name.clone() + "-zomgen" + &rule_id.to_string();
                         break;
                     }
                 }
@@ -143,11 +142,8 @@ pub fn remove_zeroormore(parser: &mut Parser) {
     for (zom_name, (zom_orig, zom_child)) in zom_queue.clone().into_iter() {
         let seq1_name = zom_name.clone() + "-seq1";
 
-
         let mut zom = ParsingRule::new(zom_name.clone(), RuleType::Or);
         zom.children_names.push(seq1_name.clone());
-
-
 
         //child 1
         let mut seq1 = ParsingRule::new(seq1_name.clone(), RuleType::Sequence);
@@ -169,7 +165,6 @@ pub fn remove_zeroormore(parser: &mut Parser) {
 
         rule_name_registry_queue.insert(zom_name.clone(), zom);
     }
-
 
     for (rule_name, rule) in rule_name_registry_queue.into_iter() {
         //println!("{:?}", rule_name);
@@ -234,7 +229,6 @@ pub fn change_zom_rule_rec(
 
     zom_queue.insert(zom_gen_rule_name, (zom_orig_child_name, zom_children));
 }
-
 
 pub fn remove_withexception(parser: &mut Parser) {
     /*for rule in parser.rule_vec.iter_mut() {

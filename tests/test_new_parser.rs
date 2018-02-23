@@ -13,14 +13,13 @@ use xml_oxide::sax::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-
 struct MySaxHandler {
     pub attributes_string: String,
 }
 
 impl xml_sax::ContentHandler for MySaxHandler {
-    fn start_document(&mut self){}
-    fn end_document(&mut self){}
+    fn start_document(&mut self) {}
+    fn end_document(&mut self) {}
     fn start_element(&mut self, name: &str, attributes: &xml_sax::SAXAttributes) {
         for attr in attributes.iter() {
             println!("{}->{}", attr.get_qualified_name(), attr.get_value());
@@ -38,13 +37,11 @@ impl xml_sax::ContentHandler for MySaxHandler {
     fn characters(&mut self, characters: &str) {
         // println!("{}", characters);
     }
-  
 }
 
 impl xml_sax::StatsHandler for MySaxHandler {
     fn offset(&mut self, offset: usize) {}
 }
-
 
 #[test]
 fn tidy_parser() {

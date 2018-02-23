@@ -2,10 +2,8 @@ extern crate indextree;
 extern crate xml_oxide;
 extern crate xml_sax;
 
-
 use indextree::Arena;
 use std::ops::Index;
-
 
 #[test]
 fn tree2() {

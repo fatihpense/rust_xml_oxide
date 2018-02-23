@@ -1,4 +1,3 @@
-
 use parser::ParsingPassLogStream;
 use parser::parse_with_rule;
 use parser::parse_with_rule2;
@@ -24,10 +23,9 @@ use itertools;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-
 pub struct SaxParser {
-    content_handler: Option< Rc<RefCell<ContentHandler>> >,
-    stats_handler: Option< Rc<RefCell<StatsHandler>> >,
+    content_handler: Option<Rc<RefCell<ContentHandler>>>,
+    stats_handler: Option<Rc<RefCell<StatsHandler>>>,
     counter: i64,
     element_names: Vec<String>,
     attribute_values: Vec<String>,
@@ -63,7 +61,6 @@ impl Attribute {
     }
 }
 
-
 struct Attributes {
     attribute_vec: Vec<Box<Attribute>>,
     attribute_qname_map: HashMap<String, usize>,
@@ -83,7 +80,6 @@ impl SAXAttributes for Attributes {
             }
             None => None,
         }
-
     }
 
     fn iter(&self) -> Box<Iterator<Item = Box<SAXAttribute>>> {
@@ -94,7 +90,6 @@ impl SAXAttributes for Attributes {
         return Box::new(x);
     }
 }
-
 
 pub struct AttributesIter {
     attribute_vec: Vec<Box<Attribute>>,
@@ -114,7 +109,6 @@ impl Iterator for AttributesIter {
     }
 }
 
-
 impl Attributes {
     fn new() -> Attributes {
         Attributes {
@@ -124,7 +118,6 @@ impl Attributes {
         }
     }
     fn clear(&mut self) {
-
         self.attribute_vec.clear();
         self.attribute_qname_map.clear();
         self.attribute_uri_local_map.clear();
@@ -132,19 +125,21 @@ impl Attributes {
 }
 
 impl<'a> ParsingPassLogStream for SaxParser {
-    fn offset(&mut self, offset:usize){
+    fn offset(&mut self, offset: usize) {
         //self.content_handler.
         //&self.content_handler.as_mut().unwrap().offset(offset);
         {
             if let &Some(_) = &self.stats_handler {
-                self.stats_handler.as_mut().unwrap().borrow_mut().offset(offset);
+                self.stats_handler
+                    .as_mut()
+                    .unwrap()
+                    .borrow_mut()
+                    .offset(offset);
             }
         }
-
-        
     }
     fn try(&mut self, rulename: String, starting_pos: usize) -> () {
-//println!("try rule: {:?}",rulename );
+        //println!("try rule: {:?}",rulename );
         if rulename == "STag" || rulename == "EmptyElemTag" {
             self.element_names.clear();
             self.attribute_values.clear();
@@ -152,21 +147,22 @@ impl<'a> ParsingPassLogStream for SaxParser {
         }
     }
 
-    fn pass(&mut self,
-            rulename: String,
-            chars: &Vec<char>,
-            mut starting_pos: usize,
-            mut ending_pos: usize)
-            -> () {
-//println!("pass rule: {:?}, {:?},{:?}",rulename,starting_pos,ending_pos );
+    fn pass(
+        &mut self,
+        rulename: String,
+        chars: &Vec<char>,
+        mut starting_pos: usize,
+        mut ending_pos: usize,
+    ) -> () {
+        //println!("pass rule: {:?}, {:?},{:?}",rulename,starting_pos,ending_pos );
 
         if starting_pos > ending_pos || ending_pos == 0 {
             return;
         }
 
         //normalize for parser3
-        ending_pos=ending_pos-starting_pos;
-        starting_pos= 0;
+        ending_pos = ending_pos - starting_pos;
+        starting_pos = 0;
 
         if rulename == "Name" {
             let s: String = chars[starting_pos..ending_pos]
@@ -174,7 +170,6 @@ impl<'a> ParsingPassLogStream for SaxParser {
                 .cloned()
                 .collect();
             self.element_names.push(s);
-
         }
 
         if rulename == "AttValue" {
@@ -202,48 +197,74 @@ impl<'a> ParsingPassLogStream for SaxParser {
 
         if rulename == "STag" {
             let name: String = self.element_names.pop().unwrap();
-            self.content_handler.as_mut().unwrap().borrow_mut().start_element(&name, &self.attributes);
+            self.content_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .start_element(&name, &self.attributes);
         }
 
         if rulename == "EmptyElemTag" {
-
             let name: String = self.element_names.pop().unwrap();
-            self.content_handler.as_mut().unwrap().borrow_mut().start_element(&name, &self.attributes);
+            self.content_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .start_element(&name, &self.attributes);
         }
 
         if rulename == "ETag" {
             let name: String = self.element_names.pop().unwrap();
-            self.content_handler.as_mut().unwrap().borrow_mut().end_element(&name);
+            self.content_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .end_element(&name);
         }
         if rulename == "CharData?" {
-            let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
-            self.content_handler.as_mut().unwrap().borrow_mut().characters(&s);
+            let s: String = chars[starting_pos..ending_pos]
+                .into_iter()
+                .cloned()
+                .collect();
+            self.content_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .characters(&s);
         }
 
         // [18] CDSect
         if rulename == "CDSect" {
-            let s: String = chars[starting_pos + 9..ending_pos - 3].into_iter().cloned().collect();
-            self.content_handler.as_mut().unwrap().borrow_mut().characters(&s);
+            let s: String = chars[starting_pos + 9..ending_pos - 3]
+                .into_iter()
+                .cloned()
+                .collect();
+            self.content_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .characters(&s);
         }
 
         // rule 67
         if rulename == "Reference" {
-            let s: String = chars[starting_pos..ending_pos].into_iter().cloned().collect();
+            let s: String = chars[starting_pos..ending_pos]
+                .into_iter()
+                .cloned()
+                .collect();
             let result: String;
             // rule 66 CharRef
             if s.starts_with("&#x") {
-
                 // parse hex
                 let hex_val: String = s.chars()
                     .filter(|&n| n != '&' && n != '#' && n != 'x' && n != ';')
                     .collect();
                 // todo dont panic give error.
-                result =
-                    char::from_u32(u32::from_str_radix(&hex_val, 16).unwrap()).unwrap().to_string();
-                // .collect::<Vec<char>>(); also working but vec
-
+                result = char::from_u32(u32::from_str_radix(&hex_val, 16).unwrap())
+                    .unwrap()
+                    .to_string();
+            // .collect::<Vec<char>>(); also working but vec
             } else if s.starts_with("&#") {
-
                 // parse scalar
                 let scalar_val: String = s.chars()
                     .filter(|&n| n != '&' && n != '#' && n != ';')
@@ -253,7 +274,6 @@ impl<'a> ParsingPassLogStream for SaxParser {
                     .unwrap()
                     .to_string();
             } else {
-
                 // rule 68 EntityRef
                 result = match s.as_ref() {
                     "&quot;" => '"'.to_string(),
@@ -264,12 +284,13 @@ impl<'a> ParsingPassLogStream for SaxParser {
 
                     _ => "".to_string(), //TODO give error
                 };
-
             }
-            self.content_handler.as_mut().unwrap().borrow_mut().characters(&result);
+            self.content_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .characters(&result);
         }
-
-
     }
 }
 
@@ -277,25 +298,25 @@ impl<'a> SaxParser {
     pub fn new() -> SaxParser {
         return SaxParser {
             content_handler: None,
-            stats_handler:None,
+            stats_handler: None,
             counter: 0,
             element_names: Vec::new(),
             attribute_values: Vec::new(),
             attributes: Attributes::new(),
         };
     }
-    pub fn set_content_handler<T: ContentHandler + 'static>(&mut self, content_handler: Rc<RefCell<T>>) {
+    pub fn set_content_handler<T: ContentHandler + 'static>(
+        &mut self,
+        content_handler: Rc<RefCell<T>>,
+    ) {
         self.content_handler = Some(content_handler);
     }
 
-    pub fn set_stats_handler<T: StatsHandler+ 'static>(&mut self, stats_handler: Rc<RefCell<T>>) {
+    pub fn set_stats_handler<T: StatsHandler + 'static>(&mut self, stats_handler: Rc<RefCell<T>>) {
         self.stats_handler = Some(stats_handler);
     }
 
     pub fn parse_old<R: Read>(mut self, read: R) {
-
-
-
         let parser_rules = prepare_rules();
         let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
 
@@ -303,32 +324,28 @@ impl<'a> SaxParser {
         let mut state_vec = Vec::new();
         let offset: usize = 0;
 
-
         let mut chars: Vec<char> = Vec::new();
         let citer = char_iter::chars(read);
 
-
         let mut chunk_count: usize = 0;
         for ch in citer {
-
             if ch.is_ok() {
-
                 chars.push(ch.unwrap());
                 chunk_count += 1;
                 if chunk_count >= 10000 {
                     chunk_count = 0;
 
-
-                    let result = parse_with_rule(&parser_rules.rule_vec,
-                                                 &rule,
-                                                 &chars,
-                                                 0,
-                                                 offset,
-                                                 &mut resume_vec,
-                                                 &mut state_vec,
-                                                 self);
+                    let result = parse_with_rule(
+                        &parser_rules.rule_vec,
+                        &rule,
+                        &chars,
+                        0,
+                        offset,
+                        &mut resume_vec,
+                        &mut state_vec,
+                        self,
+                    );
                     self = result.0;
-
 
                     let mut erasable_pos: usize = 0;
                     let mut split_pos: usize = 0;
@@ -354,90 +371,95 @@ impl<'a> SaxParser {
                     state_vec = Vec::new();
                     // starting position can be different erasable_pos?
                     //&self.content_handler.as_mut().unwrap().offset(erasable_pos);
-                        // .unwrap()
+                    // .unwrap()
                     {
-                    if let Some(_) = self.stats_handler {
-                        self.stats_handler.as_mut().unwrap().borrow_mut().offset(erasable_pos);
-                        
-                    }
+                        if let Some(_) = self.stats_handler {
+                            self.stats_handler
+                                .as_mut()
+                                .unwrap()
+                                .borrow_mut()
+                                .offset(erasable_pos);
+                        }
                     }
 
                     chars = chars.split_off(erasable_pos);
-
                 }
             } else {
-
                 break;
             }
         }
 
         // last bit
-        let result = parse_with_rule(&parser_rules.rule_vec,
-                                     &rule,
-                                     &chars,
-                                     0,
-                                     offset,
-                                     &mut resume_vec,
-                                     &mut state_vec,
-                                     self);
+        let result = parse_with_rule(
+            &parser_rules.rule_vec,
+            &rule,
+            &chars,
+            0,
+            offset,
+            &mut resume_vec,
+            &mut state_vec,
+            self,
+        );
         self = result.0;
 
-        
-       // .unwrap()
+        // .unwrap()
         if let Some(_) = self.stats_handler {
-            self.stats_handler.as_mut().unwrap().borrow_mut().offset(chars.len());
+            self.stats_handler
+                .as_mut()
+                .unwrap()
+                .borrow_mut()
+                .offset(chars.len());
         }
-  
-
     }
 
-     pub fn parse2<R: Read>(mut self, read: R) {
-
-
+    pub fn parse2<R: Read>(mut self, read: R) {
         let mut parser_rules = prepare_rules();
         parsertidy::remove_optional(&mut parser_rules);
         parsertidy::remove_zeroormore(&mut parser_rules);
         let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
 
-
         //let mut chars: Vec<char> = Vec::new();
 
-        let mut citer  = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
-{
-    &citer.peek();
-}
- let mut arena = &mut Arena::new();
+        let mut citer = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
+        {
+            &citer.peek();
+        }
+        let mut arena = &mut Arena::new();
 
+        let node = PNode {
+            rulename: "document".to_owned(),
+            state: StateType::Init,
+            ruletype: rule.rule_type.clone(),
+            current_sequence: 0,
+        };
 
-let node=  PNode{    rulename: "document".to_owned(),
-                    state: StateType::Init,
-                    ruletype : rule.rule_type.clone(),
-                    current_sequence: 0};
+        // Add some new nodes to the arena
+        let a = arena.new_node(node);
+        let mut index = 0;
+        loop {
+            match citer.next() {
+                Some(ch) => {
+                    if ch.is_ok() {
+                        PNode::new_char(&parser_rules, a, arena, ch.unwrap(), &mut citer);
+                        println!("PRINTING{:?}", index);
 
-    // Add some new nodes to the arena
-    let a = arena.new_node(node);
-let mut index = 0;
-loop {
-    match citer.next() {
-        Some(ch) => {
-            if ch.is_ok(){
-                PNode::new_char(&parser_rules,a, arena, ch.unwrap(),&mut citer);
-                println!("PRINTING{:?}",index);
-
-               {
-                    let pnode : &PNode = &arena.index(a).data;
-                     println!("{:?}|sta:{:?}|seq:{:?}|typ:{:?}", pnode.rulename,pnode.state,pnode.current_sequence,pnode.ruletype); //arena.index(n).data
-               }
-                PNode::print(a, arena,0);
-            }else{
-                break;
+                        {
+                            let pnode: &PNode = &arena.index(a).data;
+                            println!(
+                                "{:?}|sta:{:?}|seq:{:?}|typ:{:?}",
+                                pnode.rulename, pnode.state, pnode.current_sequence, pnode.ruletype
+                            ); //arena.index(n).data
+                        }
+                        PNode::print(a, arena, 0);
+                    } else {
+                        break;
+                    }
+                }
+                None => break,
             }
-        },
-        None => { break }
-    }
-    index +=1;
-}
-/*
+            index += 1;
+        }
+        /*
         for (i,ch) in citer.enumerate() {
 
             if ch.is_ok() {
@@ -464,43 +486,45 @@ loop {
         }
          //PNode::print(a, arena);
 */
-     }
- 
- pub fn parse<R: Read>(mut self, read: R) {
+    }
 
-    let mut parser_rules = prepare_rules();
-    //parsertidy::remove_optional(&mut parser_rules);
-    //parsertidy::remove_zeroormore(&mut parser_rules);
-    let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
+    pub fn parse<R: Read>(mut self, read: R) {
+        let mut parser_rules = prepare_rules();
+        //parsertidy::remove_optional(&mut parser_rules);
+        //parsertidy::remove_zeroormore(&mut parser_rules);
+        let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
 
+        //let mut chars: Vec<char> = Vec::new();
 
-    //let mut chars: Vec<char> = Vec::new();
-
-    let mut citer  = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
+        let mut citer = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
    /* {
     &citer.peek();
     }
 */
         let mut resume_vec = Vec::new();
         let mut state_vec = Vec::new();
-         self.content_handler.as_mut().unwrap().borrow_mut().start_document();
-     let result = parse_with_rule2(&parser_rules.rule_vec,
-                                                 &rule,
-                                                 &mut citer,
-                                                 //&Vec::new(),
-                                                 0,
-                                                 0,
-                                                 &mut resume_vec,
-                                                 &mut state_vec,
-                                                 self);
-    self = result.1;
-    self.content_handler.as_mut().unwrap().borrow_mut().start_document();
-    //println!("result:{:?}",result.2 );
-
- }
-
- 
+        self.content_handler
+            .as_mut()
+            .unwrap()
+            .borrow_mut()
+            .start_document();
+        let result = parse_with_rule2(
+            &parser_rules.rule_vec,
+            &rule,
+            &mut citer,
+            //&Vec::new(),
+            0,
+            0,
+            &mut resume_vec,
+            &mut state_vec,
+            self,
+        );
+        self = result.1;
+        self.content_handler
+            .as_mut()
+            .unwrap()
+            .borrow_mut()
+            .start_document();
+        //println!("result:{:?}",result.2 );
+    }
 }
-
-
- 
