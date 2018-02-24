@@ -1,6 +1,6 @@
 [package]
 name = "xml_oxide"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Fatih Pense <fatihpense@gmail.com>"]
 
 description = "XML parser implementation for SAX interface: xml_sax"
@@ -10,5 +10,5 @@ categories = ["parsing","parser-implementations"]
 license = "MIT"
 
 [dependencies]
-xml_sax = { path = "C:/dev/github/rust/rust_xml_sax" }
+xml_sax = "0.0.3"
 itertools = "0.7.6"

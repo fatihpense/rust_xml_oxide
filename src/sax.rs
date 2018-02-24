@@ -242,18 +242,16 @@ impl<'a> ParsingPassLogStream for SaxParser {
                         .unwrap_or(default);
                     //attr.prefix = prefix;
                     uri = result.2.clone();
-
-                    attr.local_name = local_name;
-                    attr.uri = uri;
                 } else {
                     //  ""
                     //https://stackoverflow.com/questions/3312390/xml-default-namespaces-for-unqualified-attribute-names
                     local_name = attr.get_qualified_name().to_owned();
-                    prefix = "".to_owned();
-                    attr.uri = "".to_owned();
+                    //prefix = "".to_owned();
+                    uri = "".to_owned();
                 }
+                attr.local_name = local_name;
+                attr.uri = uri;
             }
-
             //elementname code should merge #1
             let name: String = self.element_names.pop().unwrap();
 
@@ -332,16 +330,15 @@ impl<'a> ParsingPassLogStream for SaxParser {
                         .unwrap_or(default);
                     //attr.prefix = prefix;
                     uri = result.2.clone();
-
-                    attr.local_name = local_name;
-                    attr.uri = uri;
                 } else {
                     //  ""
                     //https://stackoverflow.com/questions/3312390/xml-default-namespaces-for-unqualified-attribute-names
                     local_name = attr.get_qualified_name().to_owned();
-                    prefix = "".to_owned();
-                    attr.uri = "".to_owned();
+                    //prefix = "".to_owned();
+                    uri = "".to_owned();
                 }
+                attr.local_name = local_name;
+                attr.uri = uri;
             }
 
             //elementname code should merge #2
