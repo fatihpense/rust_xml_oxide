@@ -201,7 +201,7 @@ impl<'a> ParsingPassLogStream for SaxParser {
             self.element_depth += 1;
             //start prefix mapping
 
-            //set xmlns: values
+            //set xmlns: values (should merge#1)
             for attr in self.attributes.attribute_vec.iter() {
                 if attr.get_qualified_name().starts_with("xmlns:") {
                     let v: Vec<&str> = attr.get_qualified_name().clone().split(':').collect();
@@ -233,23 +233,25 @@ impl<'a> ParsingPassLogStream for SaxParser {
                         prefix = v[0].to_owned();
                         local_name = v[1].to_owned();
                     }
+                    //search it.
+                    let default = &(0, "".to_owned(), "".to_owned());
+                    let result = self.namespaces
+                        .iter()
+                        .rev()
+                        .find(|&x| x.1 == prefix)
+                        .unwrap_or(default);
+                    //attr.prefix = prefix;
+                    uri = result.2.clone();
+
+                    attr.local_name = local_name;
+                    attr.uri = uri;
                 } else {
                     //  ""
+                    //https://stackoverflow.com/questions/3312390/xml-default-namespaces-for-unqualified-attribute-names
                     local_name = attr.get_qualified_name().to_owned();
                     prefix = "".to_owned();
+                    attr.uri = "".to_owned();
                 }
-                //search it.
-                let default = &(0, "".to_owned(), "".to_owned());
-                let result = self.namespaces
-                    .iter()
-                    .rev()
-                    .find(|&x| x.1 == prefix)
-                    .unwrap_or(default);
-                //attr.prefix = prefix;
-                uri = result.2.clone();
-
-                attr.local_name = local_name;
-                attr.uri = uri;
             }
 
             //elementname code should merge #1
@@ -290,6 +292,26 @@ impl<'a> ParsingPassLogStream for SaxParser {
             self.element_depth += 1;
             //start prefix mapping
 
+            //set xmlns: values (should merge#1)
+            for attr in self.attributes.attribute_vec.iter() {
+                if attr.get_qualified_name().starts_with("xmlns:") {
+                    let v: Vec<&str> = attr.get_qualified_name().clone().split(':').collect();
+                    // let prefix = v[1];
+                    //attr.get_value();
+                    self.namespaces.push((
+                        self.element_depth,
+                        v[1].to_owned(),
+                        attr.get_value().to_owned(),
+                    ));
+                }
+                if attr.get_qualified_name() == "xmlns" {
+                    self.namespaces.push((
+                        self.element_depth,
+                        "".to_owned(),
+                        attr.get_value().to_owned(),
+                    ));
+                }
+            }
             //attribute code should merge #2
             for attr in self.attributes.attribute_vec.iter_mut() {
                 let prefix: String;
@@ -301,23 +323,25 @@ impl<'a> ParsingPassLogStream for SaxParser {
                         prefix = v[0].to_owned();
                         local_name = v[1].to_owned();
                     }
+                    //search it.
+                    let default = &(0, "".to_owned(), "".to_owned());
+                    let result = self.namespaces
+                        .iter()
+                        .rev()
+                        .find(|&x| x.1 == prefix)
+                        .unwrap_or(default);
+                    //attr.prefix = prefix;
+                    uri = result.2.clone();
+
+                    attr.local_name = local_name;
+                    attr.uri = uri;
                 } else {
                     //  ""
+                    //https://stackoverflow.com/questions/3312390/xml-default-namespaces-for-unqualified-attribute-names
                     local_name = attr.get_qualified_name().to_owned();
                     prefix = "".to_owned();
+                    attr.uri = "".to_owned();
                 }
-                //search it.
-                let default = &(0, "".to_owned(), "".to_owned());
-                let result = self.namespaces
-                    .iter()
-                    .rev()
-                    .find(|&x| x.1 == prefix)
-                    .unwrap_or(default);
-                //attr.prefix = prefix;
-                uri = result.2.clone();
-
-                attr.local_name = local_name;
-                attr.uri = uri;
             }
 
             //elementname code should merge #2
@@ -617,7 +641,7 @@ impl<'a> SaxParser {
             .as_mut()
             .unwrap()
             .borrow_mut()
-            .start_document();
+            .end_document();
         //println!("result:{:?}",result.2 );
     }
 }
