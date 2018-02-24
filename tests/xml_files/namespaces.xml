@@ -1,0 +1,13 @@
+<root xmlns="urn:rootns">
+    <ns1:a xmlns:ns1="http://ns1">
+        <ns2:b noprefattr="valuenp" xmlns:ns2="urn:ns2"/>
+        <c/>
+        <ns1:d xmlns="urn:d">
+            <e xmlns="urn:e" xmlns:ns2="urn:b2">
+                <ns2:b2/>
+            </e>
+            <f attrf="valuef"/>
+        </ns1:d>
+    </ns1:a>
+    <g/>
+</root>

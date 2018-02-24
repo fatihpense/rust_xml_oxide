@@ -20,7 +20,13 @@ struct MySaxHandler {
 impl xml_sax::ContentHandler for MySaxHandler {
     fn start_document(&mut self) {}
     fn end_document(&mut self) {}
-    fn start_element(&mut self, name: &str, attributes: &xml_sax::SAXAttributes) {
+    fn start_element(
+        &mut self,
+        uri: &str,
+        local_name: &str,
+        qualified_name: &str,
+        attributes: &xml_sax::SAXAttributes,
+    ) {
         for attr in attributes.iter() {
             println!("{}->{}", attr.get_qualified_name(), attr.get_value());
             self.attributes_string.push_str(attr.get_qualified_name());
@@ -30,7 +36,7 @@ impl xml_sax::ContentHandler for MySaxHandler {
         }
         // println!("{}", name);
     }
-    fn end_element(&mut self, name: &str) {
+    fn end_element(&mut self, uri: &str, local_name: &str, qualified_name: &str) {
 
         // println!("{}", name);
     }

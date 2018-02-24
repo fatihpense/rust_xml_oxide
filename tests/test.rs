@@ -24,13 +24,19 @@ struct MySaxHandler {
 impl xml_sax::ContentHandler for MySaxHandler {
     fn start_document(&mut self) {}
     fn end_document(&mut self) {}
-    fn start_element(&mut self, name: &str, attributes: &xml_sax::SAXAttributes) {
+    fn start_element(
+        &mut self,
+        uri: &str,
+        local_name: &str,
+        qualified_name: &str,
+        attributes: &xml_sax::SAXAttributes,
+    ) {
         self.counter = self.counter + 1;
-        println!("{}", name);
+        println!("{}", qualified_name);
     } //need attributes
-    fn end_element(&mut self, name: &str) {
+    fn end_element(&mut self, uri: &str, local_name: &str, qualified_name: &str) {
         self.end_counter += 1;
-        println!("{}", name);
+        println!("{}", qualified_name);
     }
     fn characters(&mut self, characters: &str) {
         println!("{}", characters);
@@ -71,7 +77,13 @@ struct MyCollectorSaxHandler {
 impl xml_sax::ContentHandler for MyCollectorSaxHandler {
     fn start_document(&mut self) {}
     fn end_document(&mut self) {}
-    fn start_element(&mut self, qualified_name: &str, attributes: &xml_sax::SAXAttributes) {
+    fn start_element(
+        &mut self,
+        uri: &str,
+        local_name: &str,
+        qualified_name: &str,
+        attributes: &xml_sax::SAXAttributes,
+    ) {
         self.start_counter = self.start_counter + 1;
         self.start_el_name_vec.push(qualified_name.to_owned());
 
@@ -85,7 +97,7 @@ impl xml_sax::ContentHandler for MyCollectorSaxHandler {
             self.characters_buf = String::new();
         }
     }
-    fn end_element(&mut self, qualified_name: &str) {
+    fn end_element(&mut self, uri: &str, local_name: &str, qualified_name: &str) {
         self.end_counter += 1;
         self.end_el_name_vec.push(qualified_name.to_owned());
 
