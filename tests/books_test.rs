@@ -15,18 +15,46 @@ use std::cell::RefCell;
 
 struct MySaxHandler {
     pub attributes_string: String,
+    pub book_element_attributes: String,
 }
 
 impl xml_sax::ContentHandler for MySaxHandler {
     fn start_document(&mut self) {}
     fn end_document(&mut self) {}
-    fn start_element(&mut self, name: &str, attributes: &xml_sax::SAXAttributes) {
+    fn start_element(&mut self, qualified_name: &str, attributes: &xml_sax::SAXAttributes) {
         for attr in attributes.iter() {
-            println!("{}->{}", attr.get_qualified_name(), attr.get_value());
+            //println!("{}->{}", attr.get_qualified_name(), attr.get_value());
             self.attributes_string.push_str(attr.get_qualified_name());
             self.attributes_string.push_str("->");
             self.attributes_string.push_str(attr.get_value());
             self.attributes_string.push_str(",");
+        }
+
+        if qualified_name == "fp:book" {
+            for attr in attributes.iter() {
+                //println!("{}->{}", attr.get_qualified_name(), attr.get_value());
+                self.book_element_attributes.push_str("qname");
+                self.book_element_attributes.push_str("->");
+                self.book_element_attributes
+                    .push_str(attr.get_qualified_name());
+                self.book_element_attributes.push_str(", ");
+
+                self.book_element_attributes.push_str("uri");
+                self.book_element_attributes.push_str("->");
+                self.book_element_attributes.push_str(attr.get_uri());
+                self.book_element_attributes.push_str(", ");
+
+                self.book_element_attributes.push_str("lname");
+                self.book_element_attributes.push_str("->");
+                self.book_element_attributes.push_str(attr.get_local_name());
+                self.book_element_attributes.push_str(", ");
+
+                self.book_element_attributes.push_str("value");
+                self.book_element_attributes.push_str("->");
+                self.book_element_attributes.push_str(attr.get_value());
+                self.book_element_attributes.push_str(". ");
+            }
+            println!("{}", self.book_element_attributes);
         }
         // println!("{}", name);
     }
@@ -56,6 +84,7 @@ fn books_attributes() {
 
     let mut my_sax_handler = MySaxHandler {
         attributes_string: String::new(),
+        book_element_attributes: String::new(),
     };
 
     let mut sax_parser = SaxParser::new();
@@ -68,5 +97,15 @@ fn books_attributes() {
     assert_eq!(
         handler.borrow().attributes_string,
         expected_attributes_string
+    );
+
+    let expected_book_element_attributes =
+        "qname->fp:archive, uri->http://github.com/fatihpense, lname->archive, value->true. \
+         qname->fp:read, uri->http://github.com/fatihpense, lname->read, value->true. \
+         qname->fp:gifted, uri->http://github.com/fatihpense, lname->gifted, value->false. ";
+
+    assert_eq!(
+        handler.borrow().book_element_attributes,
+        expected_book_element_attributes
     );
 }

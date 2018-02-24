@@ -3,7 +3,6 @@ use parser::parse_with_rule;
 use parser::parse_with_rule2;
 use parser::prepare_rules;
 
-
 use std::io::Read;
 use std::collections::HashMap;
 
@@ -11,10 +10,6 @@ use char_iter;
 use std::char;
 
 use xml_sax::*;
-
-
-
-
 
 use itertools;
 
@@ -28,6 +23,8 @@ pub struct SaxParser {
     element_names: Vec<String>,
     attribute_values: Vec<String>,
     attributes: Attributes,
+    namespaces: Vec<(usize, String, String)>, //element depth, prefix, uri
+    element_depth: usize,
 }
 
 #[derive(Clone)]
@@ -45,6 +42,12 @@ impl SAXAttribute for Attribute {
 
     fn get_qualified_name(&self) -> &str {
         &self.qualified_name
+    }
+    fn get_local_name(&self) -> &str {
+        &self.local_name
+    }
+    fn get_uri(&self) -> &str {
+        &self.uri
     }
 }
 
@@ -136,7 +139,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
             }
         }
     }
-    fn try(&mut self, rulename: String, _: usize) -> () { //starting_pos _
+    fn try(&mut self, rulename: String, _: usize) -> () {
+        //starting_pos _
         //println!("try rule: {:?}",rulename );
         if rulename == "STag" || rulename == "EmptyElemTag" {
             self.element_names.clear();
@@ -194,21 +198,180 @@ impl<'a> ParsingPassLogStream for SaxParser {
         }
 
         if rulename == "STag" {
+            self.element_depth += 1;
+            //start prefix mapping
+
+            //set xmlns: values
+            for attr in self.attributes.attribute_vec.iter() {
+                if attr.get_qualified_name().starts_with("xmlns:") {
+                    let v: Vec<&str> = attr.get_qualified_name().clone().split(':').collect();
+                    // let prefix = v[1];
+                    //attr.get_value();
+                    self.namespaces.push((
+                        self.element_depth,
+                        v[1].to_owned(),
+                        attr.get_value().to_owned(),
+                    ));
+                }
+                if attr.get_qualified_name() == "xmlns" {
+                    self.namespaces.push((
+                        self.element_depth,
+                        "".to_owned(),
+                        attr.get_value().to_owned(),
+                    ));
+                }
+            }
+
+            //attribute code should merge #1
+            for attr in self.attributes.attribute_vec.iter_mut() {
+                let prefix: String;
+                let local_name: String;
+                let uri: String;
+                if attr.get_qualified_name().contains(':') {
+                    {
+                        let v: Vec<&str> = attr.get_qualified_name().clone().split(':').collect();
+                        prefix = v[0].to_owned();
+                        local_name = v[1].to_owned();
+                    }
+                } else {
+                    //  ""
+                    local_name = attr.get_qualified_name().to_owned();
+                    prefix = "".to_owned();
+                }
+                //search it.
+                let default = &(0, "".to_owned(), "".to_owned());
+                let result = self.namespaces
+                    .iter()
+                    .rev()
+                    .find(|&x| x.1 == prefix)
+                    .unwrap_or(default);
+                //attr.prefix = prefix;
+                uri = result.2.clone();
+
+                attr.local_name = local_name;
+                attr.uri = uri;
+            }
+
+            //elementname code should merge #1
             let name: String = self.element_names.pop().unwrap();
+
+            let prefix: String;
+            let local_name: String;
+            let uri: String;
+            if name.contains(':') {
+                {
+                    let v: Vec<&str> = name.split(':').collect();
+                    prefix = v[0].to_owned();
+                    local_name = v[1].to_owned();
+                }
+            } else {
+                //  ""
+                local_name = name.to_owned();
+                prefix = "".to_owned();
+            }
+            //search it.
+            let default = &(0, "".to_owned(), "".to_owned());
+            let result = self.namespaces
+                .iter()
+                .rev()
+                .find(|&x| x.1 == prefix)
+                .unwrap_or(default);
+            //attr.prefix = prefix;
+            uri = result.2.clone();
+
             self.content_handler
                 .as_mut()
                 .unwrap()
                 .borrow_mut()
-                .start_element(&name, &self.attributes);
+                .start_element(&uri, &local_name, &name, &self.attributes);
         }
 
         if rulename == "EmptyElemTag" {
+            self.element_depth += 1;
+            //start prefix mapping
+
+            //attribute code should merge #2
+            for attr in self.attributes.attribute_vec.iter_mut() {
+                let prefix: String;
+                let local_name: String;
+                let uri: String;
+                if attr.get_qualified_name().contains(':') {
+                    {
+                        let v: Vec<&str> = attr.get_qualified_name().clone().split(':').collect();
+                        prefix = v[0].to_owned();
+                        local_name = v[1].to_owned();
+                    }
+                } else {
+                    //  ""
+                    local_name = attr.get_qualified_name().to_owned();
+                    prefix = "".to_owned();
+                }
+                //search it.
+                let default = &(0, "".to_owned(), "".to_owned());
+                let result = self.namespaces
+                    .iter()
+                    .rev()
+                    .find(|&x| x.1 == prefix)
+                    .unwrap_or(default);
+                //attr.prefix = prefix;
+                uri = result.2.clone();
+
+                attr.local_name = local_name;
+                attr.uri = uri;
+            }
+
+            //elementname code should merge #2
             let name: String = self.element_names.pop().unwrap();
+
+            let prefix: String;
+            let local_name: String;
+            let uri: String;
+            if name.contains(':') {
+                {
+                    let v: Vec<&str> = name.split(':').collect();
+                    prefix = v[0].to_owned();
+                    local_name = v[1].to_owned();
+                }
+            } else {
+                //  ""
+                local_name = name.to_owned();
+                prefix = "".to_owned();
+            }
+            //search it.
+            let default = &(0, "".to_owned(), "".to_owned());
+            let result = self.namespaces
+                .iter()
+                .rev()
+                .find(|&x| x.1 == prefix)
+                .unwrap_or(default)
+                .to_owned();
+
+            //attr.prefix = prefix;
+            uri = result.2.clone();
+
             self.content_handler
                 .as_mut()
                 .unwrap()
                 .borrow_mut()
-                .start_element(&name, &self.attributes);
+                .start_element(&uri, &local_name, &name, &self.attributes);
+
+            self.element_depth -= 1;
+            //end prefix mapping
+
+            /* loop {
+                match self.namespaces.last().clone() {
+                    Some(ns_tuple) => {
+                        if ns_tuple.0 > self.element_depth {
+                            self.namespaces.pop();
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                };
+            }*/
+            let depth = self.element_depth;
+            self.namespaces.retain(|ref x| x.0 <= depth);
         }
 
         if rulename == "ETag" {
@@ -217,7 +380,13 @@ impl<'a> ParsingPassLogStream for SaxParser {
                 .as_mut()
                 .unwrap()
                 .borrow_mut()
-                .end_element(&name);
+                .end_element("", "", &name);
+
+            self.element_depth -= 1;
+            //end prefix mapping
+
+            let depth = self.element_depth;
+            self.namespaces.retain(|ref x| x.0 <= depth);
         }
         if rulename == "CharData?" {
             let s: String = chars[starting_pos..ending_pos]
@@ -301,6 +470,8 @@ impl<'a> SaxParser {
             element_names: Vec::new(),
             attribute_values: Vec::new(),
             attributes: Attributes::new(),
+            namespaces: Vec::new(),
+            element_depth: 0,
         };
     }
     pub fn set_content_handler<T: ContentHandler + 'static>(
@@ -409,7 +580,6 @@ impl<'a> SaxParser {
                 .offset(chars.len());
         }
     }
-
 
     pub fn parse<R: Read>(mut self, read: R) {
         let parser_rules = prepare_rules();
