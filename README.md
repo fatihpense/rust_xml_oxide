@@ -1,4 +1,4 @@
-# xml_oxide [![crates.io](https://meritbadge.herokuapp.com/actix-web)](https://crates.io/crates/actix-web)
+# xml_oxide [![crates.io](https://meritbadge.herokuapp.com/xml_oxide)](https://crates.io/crates/xml_oxide)
 Rust XML parser implementation for SAX interface: xml_sax
 
 ### Features
