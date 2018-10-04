@@ -1,10 +1,7 @@
-xml_oxide
----------
+# xml_oxide [![crates.io](https://meritbadge.herokuapp.com/actix-web)](https://crates.io/crates/actix-web)
 Rust XML parser implementation for SAX interface: xml_sax
-crates.io link https://crates.io/crates/xml_oxide
 
-Features
---------
+### Features
 * It uses constant-like memory for large xml files.
 * It supports common XML structures and namespaces. No DTD etc. yet.
 * It leverages an interface that is familiar if you have dealt with SAX before.
@@ -12,8 +9,7 @@ Features
 * I'm open to advice and contribution!
 
 
-Example Usage
----------------------
+### Example Usage
 In this example "start element" and "end element" events are counted. You can see there is a handler that stores variables. We add `xml_sax::ContentHandler` interface to this handler and run parser. The beauty of having an simple interface is that more parser libraries can implement it. So there is an opportunity of code reuse across the community.
 
 Note that you can find more examples under `tests` directory.
