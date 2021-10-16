@@ -29,7 +29,7 @@ pub struct ParsingRule {
     pub children_names: Vec<String>,
     pub expected_char_ranges: Vec<(char, char)>,
     pub expected_chars: Vec<char>,
-    is_chunkable: bool,
+    pub is_chunkable: bool,
 }
 
 impl ParsingRule {

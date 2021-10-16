@@ -1,3 +1,4 @@
+#![allow(warnings, unused)]
 extern crate xml_oxide;
 extern crate xml_sax;
 
