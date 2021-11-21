@@ -10,5 +10,6 @@ categories = ["parsing","parser-implementations"]
 license = "MIT"
 
 [dependencies]
-xml_sax = "0.0.3"
+xml_sax = "0.0.4"
 itertools = "0.7.6"
+nom = "7"

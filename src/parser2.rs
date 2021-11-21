@@ -35,12 +35,11 @@ pub fn parse_with_rule3<'a, R: Read>(
     // use where char vec is used
     mut offset: usize,
     // eof
-    resume_state_vec: &mut Vec<(usize, usize, bool)>,
-    state_vec: &mut Vec<(usize, usize, bool)>,
+    // state_vec: &mut Vec<(usize, usize, bool)>,
 ) -> RuleResult<'a> {
     let mut offset_plus = 0;
 
-    println!("{:?}", rule);
+    // println!("{:?}", rule);
     match rule.rule_type {
         RuleType::Chars => {
             /*if starting_pos >= char_vector.len() {
@@ -145,8 +144,6 @@ pub fn parse_with_rule3<'a, R: Read>(
                     //&char_vector,
                     new_starting_pos,
                     offset,
-                    resume_state_vec,
-                    state_vec,
                 );
                 //if(result.0;
 
@@ -178,13 +175,15 @@ pub fn parse_with_rule3<'a, R: Read>(
             let mut child_no: usize;
             let mut new_starting_pos = starting_pos;
 
-            match resume_state_vec.pop() {
-                Some((no, resume_starting_pos, _)) => {
-                    child_no = no;
-                    new_starting_pos = resume_starting_pos;
-                }
-                None => child_no = 0,
-            }
+            // match resume_state_vec.pop() {
+            //     Some((no, resume_starting_pos, _)) => {
+            //         child_no = no;
+            //         new_starting_pos = resume_starting_pos;
+            //     }
+            //     None => child_no = 0,
+            // }
+
+            child_no = 0;
 
             for (no, rule_id) in rule.children.iter().skip(child_no).enumerate() {
                 let mut child_no2 = no + child_no;
@@ -194,11 +193,12 @@ pub fn parse_with_rule3<'a, R: Read>(
                 // }else{
                 //     state_vec.push((child_no2,new_starting_pos,true));
                 // }
-                if rule.is_chunkable {
-                    state_vec.push((child_no2, new_starting_pos, true));
-                } else {
-                    state_vec.push((child_no2, new_starting_pos, false));
-                }
+
+                // if rule.is_chunkable {
+                //     state_vec.push((child_no2, new_starting_pos, true));
+                // } else {
+                //     state_vec.push((child_no2, new_starting_pos, false));
+                // }
 
                 let new_rule = &rule_vec[*rule_id];
 
@@ -209,13 +209,10 @@ pub fn parse_with_rule3<'a, R: Read>(
                     //&char_vector,
                     new_starting_pos,
                     offset,
-                    resume_state_vec,
-                    state_vec,
                 );
 
                 match result.result {
                     ParsingResult::Fail => {
-                        state_vec.pop();
                         return RuleResult {
                             offset: offset_plus,
                             result: ParsingResult::Fail,
@@ -236,7 +233,6 @@ pub fn parse_with_rule3<'a, R: Read>(
                         };
                     }
                 }
-                state_vec.pop();
             }
 
             //println!("******{:?},{:?},{:?},{:?}",rule.rule_name.clone(),starting_pos,offset,new_starting_pos );
@@ -261,13 +257,14 @@ pub fn parse_with_rule3<'a, R: Read>(
         RuleType::Or => {
             let mut child_no: usize;
             let mut rule_starting_pos: usize = starting_pos;
-            match resume_state_vec.pop() {
-                Some((no, state_starting_pos, _)) => {
-                    child_no = no;
-                    rule_starting_pos = state_starting_pos;
-                }
-                None => child_no = 0,
-            }
+            // match resume_state_vec.pop() {
+            //     Some((no, state_starting_pos, _)) => {
+            //         child_no = no;
+            //         rule_starting_pos = state_starting_pos;
+            //     }
+            //     None => child_no = 0,
+            // }
+            child_no = 0;
 
             for (no, rule_id) in rule.children.iter().skip(child_no).enumerate() {
                 let mut child_no2 = no + child_no;
@@ -275,7 +272,7 @@ pub fn parse_with_rule3<'a, R: Read>(
                 if child_no2 == rule.children.len() - 1 {
                     no_backtrack_required = true;
                 }
-                state_vec.push((child_no2, rule_starting_pos, no_backtrack_required));
+                // state_vec.push((child_no2, rule_starting_pos, no_backtrack_required));
                 let new_rule = &rule_vec[*rule_id];
                 let result = parse_with_rule3(
                     rule_vec,
@@ -284,16 +281,12 @@ pub fn parse_with_rule3<'a, R: Read>(
                     //&char_vector,
                     rule_starting_pos,
                     offset,
-                    resume_state_vec,
-                    state_vec,
                 );
 
                 match result.result {
                     ParsingResult::Pass(s_pos, e_pos) => {
                         offset_plus += result.offset;
                         offset += result.offset;
-
-                        state_vec.pop();
 
                         return RuleResult {
                             offset: offset_plus,
@@ -312,7 +305,6 @@ pub fn parse_with_rule3<'a, R: Read>(
                         };
                     }
                 }
-                state_vec.pop();
             }
             return RuleResult {
                 offset: offset_plus,
@@ -334,8 +326,6 @@ pub fn parse_with_rule3<'a, R: Read>(
                 //&char_vector,
                 starting_pos,
                 offset,
-                resume_state_vec,
-                state_vec,
             );
             match result.result {
                 ParsingResult::Pass(s_pos, e_pos) => {
@@ -346,8 +336,6 @@ pub fn parse_with_rule3<'a, R: Read>(
                         //&char_vector,
                         starting_pos,
                         offset,
-                        resume_state_vec,
-                        state_vec,
                     );
 
                     match result2.result {
@@ -392,8 +380,6 @@ pub fn parse_with_rule3<'a, R: Read>(
                 //&char_vector,
                 starting_pos,
                 offset,
-                resume_state_vec,
-                state_vec,
             );
 
             offset_plus += result.offset;
@@ -455,8 +441,8 @@ mod tests {
         let data = "<aaa/>".as_bytes();
         let parser_rules = parser::prepare_rules();
         let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("EmptyElemTag").unwrap()];
-        let mut resume_state_vec = Vec::new();
-        let mut state_vec = Vec::new();
+
+        // let mut state_vec = Vec::new();
         let mut citer = itertools::multipeek(char_iter::chars(data));
 
         let res = parse_with_rule3(
@@ -465,13 +451,37 @@ mod tests {
             &mut citer,
             0,
             0,
-            &mut resume_state_vec,
-            &mut state_vec,
+            // &mut resume_state_vec,
+            // &mut state_vec,
         );
         println!("{:?}", res.rulename);
         println!("{:?}", res.result);
-        println!("{:?}", state_vec);
-        println!("{:?}", resume_state_vec);
+        // println!("{:?}", state_vec);
+
+        // parse equals "'<!--'"
+    }
+
+    #[test]
+    fn test_xml2() {
+        let data = "<root><A/><B/><C/></root>".as_bytes();
+        let parser_rules = parser::prepare_rules();
+        let rule = &parser_rules.rule_vec[*parser_rules.rule_registry.get("document").unwrap()];
+
+        // let mut state_vec = Vec::new();
+        let mut citer = itertools::multipeek(char_iter::chars(data));
+
+        let res = parse_with_rule3(
+            &parser_rules.rule_vec,
+            rule,
+            &mut citer,
+            0,
+            0,
+            // &mut resume_state_vec,
+            // &mut state_vec,
+        );
+        println!("{:?}", res.rulename);
+        println!("{:?}", res.result);
+        // println!("{:?}", state_vec);
 
         // parse equals "'<!--'"
     }

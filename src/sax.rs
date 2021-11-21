@@ -1,10 +1,10 @@
-use parser::ParsingPassLogStream;
 use parser::parse_with_rule;
 use parser::parse_with_rule2;
 use parser::prepare_rules;
+use parser::ParsingPassLogStream;
 
-use std::io::Read;
 use std::collections::HashMap;
+use std::io::Read;
 
 use char_iter;
 use std::char;
@@ -13,8 +13,8 @@ use xml_sax::*;
 
 use itertools;
 
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct SaxParser {
     content_handler: Option<Rc<RefCell<ContentHandler>>>,
@@ -235,7 +235,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
                     }
                     //search it.
                     let default = &(0, "".to_owned(), "".to_owned());
-                    let result = self.namespaces
+                    let result = self
+                        .namespaces
                         .iter()
                         .rev()
                         .find(|&x| x.1 == prefix)
@@ -271,7 +272,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
             }
             //search it.
             let default = &(0, "".to_owned(), "".to_owned());
-            let result = self.namespaces
+            let result = self
+                .namespaces
                 .iter()
                 .rev()
                 .find(|&x| x.1 == prefix)
@@ -323,7 +325,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
                     }
                     //search it.
                     let default = &(0, "".to_owned(), "".to_owned());
-                    let result = self.namespaces
+                    let result = self
+                        .namespaces
                         .iter()
                         .rev()
                         .find(|&x| x.1 == prefix)
@@ -360,7 +363,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
             }
             //search it.
             let default = &(0, "".to_owned(), "".to_owned());
-            let result = self.namespaces
+            let result = self
+                .namespaces
                 .iter()
                 .rev()
                 .find(|&x| x.1 == prefix)
@@ -444,7 +448,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
             // rule 66 CharRef
             if s.starts_with("&#x") {
                 // parse hex
-                let hex_val: String = s.chars()
+                let hex_val: String = s
+                    .chars()
                     .filter(|&n| n != '&' && n != '#' && n != 'x' && n != ';')
                     .collect();
                 // todo dont panic give error.
@@ -454,7 +459,8 @@ impl<'a> ParsingPassLogStream for SaxParser {
             // .collect::<Vec<char>>(); also working but vec
             } else if s.starts_with("&#") {
                 // parse scalar
-                let scalar_val: String = s.chars()
+                let scalar_val: String = s
+                    .chars()
                     .filter(|&n| n != '&' && n != '#' && n != ';')
                     .collect();
                 // todo dont panic give error.
@@ -611,10 +617,10 @@ impl<'a> SaxParser {
         //let mut chars: Vec<char> = Vec::new();
 
         let mut citer = itertools::multipeek(char_iter::chars(read)); //.into_iter().multipeek();
-   /* {
-    &citer.peek();
-    }
-*/
+                                                                      /* {
+                                                                          &citer.peek();
+                                                                          }
+                                                                      */
         let mut resume_vec = Vec::new();
         let mut state_vec = Vec::new();
         self.content_handler
