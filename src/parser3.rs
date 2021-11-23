@@ -3,11 +3,15 @@ use std::ops::{Range, RangeFrom, RangeFull};
 use nom::{
     branch::alt,
     bytes::streaming::{escaped, tag, take_while},
-    character::complete::{alphanumeric1 as alphanumeric, char, none_of, one_of},
+    character::{
+        complete::{alphanumeric1 as alphanumeric, char, none_of, one_of},
+        streaming::multispace0,
+    },
     combinator::{cut, map, opt, recognize, value},
     error::{
         context, convert_error, dbg_dmp, ContextError, Error, ErrorKind, ParseError, VerboseError,
     },
+    error_position,
     multi::{many1, separated_list0},
     number::complete::double,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
@@ -209,7 +213,38 @@ fn name(input: &[u8]) -> IResult<&[u8], &[u8]> {
 // [40] STag ::= '<' Name (S Attribute)* S? '>'
 
 fn STag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
-    match tuple((char('<'), name))(input) {
+    match tuple((char('<'), name, multispace0, char('>')))(input) {
+        Ok((i, o)) => Ok((
+            i,
+            StartElement {
+                name: unsafe { std::str::from_utf8_unchecked(o.1) },
+            },
+        )),
+
+        Err(e) => Err(e),
+    }
+}
+
+// [44] EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
+fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
+    match tuple((char('<'), name, multispace0, tag("/>")))(input) {
+        Ok((i, o)) => Ok((
+            i,
+            StartElement {
+                name: unsafe { std::str::from_utf8_unchecked(o.1) },
+            },
+        )),
+
+        Err(e) => Err(e),
+    }
+}
+
+// [3] S ::= (#x20 | #x9 | #xD | #xA)+
+// multispace0 fits
+
+// [42] ETag ::= '</' Name S? '>'
+fn ETag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
+    match tuple((tag("</"), name, multispace0, char('>')))(input) {
         Ok((i, o)) => Ok((
             i,
             StartElement {
@@ -233,39 +268,116 @@ fn test_namestart_char_t() {
     println!("{:?}", res);
 }
 
-//TODO remove c:char , this is not generic
-pub fn is_xml_char<I, Error: ParseError<I>>(c: char) -> impl Fn(I) -> IResult<I, char, Error>
-where
-    I: Slice<RangeFrom<usize>> + InputIter,
-    <I as InputIter>::Item: AsChar,
-{
-    move |i: I| match (i).iter_elements().next().map(|t| {
-        let chr = t.as_char();
-        let b = (chr >= '\u{A}' && chr <= '\u{D}')
-            || (chr >= '\u{20}' && chr <= '\u{D7FF}')
-            || (chr >= '\u{E000}' && chr <= '\u{FFFD}')
-            || (chr >= '\u{10000}' && chr <= '\u{10FFFF}');
-        (&c, b)
-    }) {
-        Some((c, true)) => Ok((i.slice(c.len()..), c.as_char())),
-        _ => Err(Err::Error(Error::from_char(i, c))),
+// [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
+// no '>' except ']]>'
+
+#[inline]
+pub fn is_CharData_single_pure_t(chr: char) -> bool {
+    chr != '<' && chr != '&'
+}
+
+pub fn CharData_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    if input.len() == 0 {
+        return Err(Err::Incomplete(Needed::new(1)));
+    }
+    let width = utf8_char_width(input[0]);
+
+    if input.len() < width {
+        return Err(Err::Incomplete(Needed::new(width - input.len())));
+    }
+
+    let c = match std::str::from_utf8(&input[..width]).ok() {
+        Some(s) => s.chars().next().unwrap(),
+        None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+    };
+
+    if is_CharData_single_pure_t(c) {
+        return Ok((&input[width..], &input[0..width]));
+    } else {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
     }
 }
 
-pub fn char2<I, Error: ParseError<I>>(c: char) -> impl Fn(I) -> IResult<I, I, Error>
-where
-    I: Slice<RangeFrom<usize>> + Slice<Range<usize>> + InputIter + InputLength,
-    <I as InputIter>::Item: AsChar,
-{
-    move |i: I| match (i).iter_elements().next().map(|t| {
-        let b = t.as_char() == c;
-        (&c, b)
-    }) {
-        None => Err(Err::Incomplete(Needed::new(c.len() - i.input_len()))),
-        Some((_, false)) => Err(Err::Error(Error::from_char(i, c))),
-        Some((c, true)) => Ok((i.slice(c.len()..), i.slice(0..c.len()))),
+fn CharData_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    //if input = 0 , don't send incomplete
+    // ref#streamcut
+    if input.len() == 0 {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
     }
+
+    // ']]>' should not appear in the chardata, if we can't be sure because input is eof, we should request more data.
+    match tag::<&str, &[u8], Error<&[u8]>>("]]>")(input) {
+        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        _ => (),
+    };
+    CharData_single_pure(input)
 }
+
+#[test]
+fn test_chardata_single() {
+    let data = "]]".as_bytes();
+
+    assert_eq!(
+        CharData_single("]".as_bytes()),
+        Err(Err::Incomplete(Needed::Unknown))
+    );
+    assert_eq!(
+        CharData_single("]]".as_bytes()),
+        Err(Err::Incomplete(Needed::Unknown))
+    );
+    assert_eq!(
+        CharData_single("]]>".as_bytes()),
+        Err(Err::Error(error_position!(
+            "]]>".as_bytes(),
+            ErrorKind::Char
+        )))
+    );
+    assert_eq!(
+        CharData_single("]]<".as_bytes()),
+        Ok((&b"]<"[..], &b"]"[..]))
+    );
+    assert_eq!(
+        CharData_single("&".as_bytes()),
+        Err(Err::Error(error_position!("&".as_bytes(), ErrorKind::Char)))
+    );
+    assert_eq!(
+        CharData_single("<".as_bytes()),
+        Err(Err::Error(error_position!("<".as_bytes(), ErrorKind::Char)))
+    );
+    assert_eq!(
+        CharData_single("abc".as_bytes()),
+        Ok((&b"bc"[..], &b"a"[..]))
+    );
+}
+
+// [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
+fn CharData(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(many0_custom(CharData_single))(input)
+}
+
+#[test]
+fn test_chardata() {
+    assert_eq!(
+        CharData("abc]".as_bytes()),
+        Err(Err::Incomplete(Needed::Unknown))
+    );
+    assert_eq!(
+        CharData("]]".as_bytes()),
+        Err(Err::Incomplete(Needed::Unknown))
+    );
+    assert_eq!(CharData("]]>".as_bytes()), Ok((&b"]]>"[..], &b""[..])));
+    assert_eq!(CharData("]]<".as_bytes()), Ok((&b"<"[..], &b"]]"[..])));
+    assert_eq!(CharData("&".as_bytes()), Ok((&b"&"[..], &b""[..])));
+    assert_eq!(CharData("<".as_bytes()), Ok((&b"<"[..], &b""[..])));
+
+    //this was returning incomplete since the next char can be the start of "]]>", but we plan to cut it off for streaming!
+    //see ref#streamcut
+    assert_eq!(CharData("abc".as_bytes()), Ok((&b""[..], &b"abc"[..])));
+}
+
+// [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
+//we will use state machine instead of this rule to make it streamable
 
 #[test]
 fn test_xml3() {
@@ -273,18 +385,6 @@ fn test_xml3() {
 
     fn parser(s: &[u8]) -> IResult<&[u8], &[u8]> {
         tag("<root>")(s)
-    }
-
-    let res = parser(&data);
-    println!("{:?}", res);
-}
-
-#[test]
-fn test_xml4() {
-    let data = "lelementnameexample".as_bytes();
-
-    fn parser(s: &[u8]) -> IResult<&[u8], (&[u8], &[u8])> {
-        tuple((alt((char2('e'), char2('l'))), alt((char2('e'), char2('l')))))(s)
     }
 
     let res = parser(&data);
