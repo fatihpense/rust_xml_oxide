@@ -2,9 +2,10 @@ use std::ops::{Range, RangeFrom, RangeFull};
 
 use nom::{
     branch::alt,
-    bytes::streaming::{escaped, tag, take_while},
+    bytes::streaming::{escaped, is_not, tag, take_while, take_while1},
     character::{
         complete::{alphanumeric1 as alphanumeric, char, none_of, one_of},
+        is_digit, is_hex_digit,
         streaming::multispace0,
     },
     combinator::{cut, map, opt, recognize, value},
@@ -12,12 +13,11 @@ use nom::{
         context, convert_error, dbg_dmp, ContextError, Error, ErrorKind, ParseError, VerboseError,
     },
     error_position,
-    multi::{many1, separated_list0},
+    multi::{many0, many1, separated_list0},
     number::complete::double,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     AsChar, Err, IResult, InputIter, InputLength, Needed, Parser, Slice,
 };
-use xml_sax::StartElement;
 
 // https://tools.ietf.org/html/rfc3629
 static UTF8_CHAR_WIDTH: [u8; 256] = [
@@ -210,28 +210,130 @@ fn name(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(pair(namestart_char, many0_custom(namechar)))(input)
 }
 
+// [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
+
+fn CharRef(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    alt((
+        delimited(tag("&#"), take_while1(is_digit), char(';')),
+        delimited(tag("&#x"), take_while1(is_hex_digit), char(';')),
+    ))(input)
+}
+
+// [68] EntityRef ::= '&' Name ';'
+
+fn EntityRef(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    delimited(tag("&"), name, char(';'))(input)
+}
+
+// [67] Reference ::= EntityRef | CharRef
+fn Reference(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    alt((EntityRef, CharRef))(input)
+}
+
+// [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
+
+fn AttValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(alt((
+        delimited(
+            char('"'),
+            many0_custom(alt((is_not(r#"<&""#), Reference))),
+            char('"'),
+        ),
+        delimited(
+            char('\''),
+            many0_custom(alt((is_not(r#"<&""#), Reference))),
+            char('\''),
+        ),
+    )))(input)
+}
+
+// [25] Eq ::= S? '=' S?
+fn Eq(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((multispace0, char('='), multispace0)))(input)
+}
+
+// [41] Attribute ::= Name Eq AttValue
+fn Attribute(input: &[u8]) -> IResult<&[u8], SAXAttribute> {
+    match tuple((name, Eq, AttValue))(input) {
+        Ok((i, o)) => {
+            return Ok((
+                i,
+                SAXAttribute {
+                    value: unsafe { std::str::from_utf8_unchecked(o.2) },
+                    qualified_name: unsafe { std::str::from_utf8_unchecked(o.0) },
+                },
+            ));
+        }
+        Err(e) => Err(e),
+    }
+}
+
+// let mut Attribute = ParsingRule::new("Attribute".to_owned(), RuleType::Sequence);
+// Attribute.children_names.push("Name".to_owned());
+// Attribute.children_names.push("Eq".to_owned());
+// Attribute.children_names.push("AttValue".to_owned());
+// rule_nameRegistry.insert(Attribute.rule_name.clone(), Attribute);
+
 // [40] STag ::= '<' Name (S Attribute)* S? '>'
 
-fn STag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
-    match tuple((char('<'), name, multispace0, char('>')))(input) {
-        Ok((i, o)) => Ok((
-            i,
-            StartElement {
-                name: unsafe { std::str::from_utf8_unchecked(o.1) },
-            },
-        )),
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SAXAttribute<'a> {
+    pub value: &'a str,
+    pub qualified_name: &'a str,
+    // fn get_value(&self) -> &str;
+    // fn get_local_name(&self) -> &str;
+    // fn get_qualified_name(&self) -> &str;
+    // fn get_uri(&self) -> &str;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StartElement<'a> {
+    pub name: &'a str,
+    pub attributes: Vec<SAXAttribute<'a>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EndElement<'a> {
+    pub name: &'a str,
+}
+
+fn STag(input: &[u8]) -> IResult<&[u8], StartElement> {
+    match tuple((
+        char('<'),
+        name,
+        many0(preceded(multispace0, Attribute)),
+        char('>'),
+    ))(input)
+    {
+        Ok((i, o)) => {
+            println!("{:?}", o);
+            return Ok((
+                i,
+                StartElement {
+                    name: unsafe { std::str::from_utf8_unchecked(o.1) },
+                    attributes: o.2,
+                },
+            ));
+        }
 
         Err(e) => Err(e),
     }
 }
 
 // [44] EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
-fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
-    match tuple((char('<'), name, multispace0, tag("/>")))(input) {
+fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], StartElement> {
+    match tuple((
+        char('<'),
+        name,
+        many0(preceded(multispace0, Attribute)),
+        tag("/>"),
+    ))(input)
+    {
         Ok((i, o)) => Ok((
             i,
             StartElement {
                 name: unsafe { std::str::from_utf8_unchecked(o.1) },
+                attributes: o.2,
             },
         )),
 
@@ -243,14 +345,17 @@ fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
 // multispace0 fits
 
 // [42] ETag ::= '</' Name S? '>'
-fn ETag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
+fn ETag(input: &[u8]) -> IResult<&[u8], EndElement> {
     match tuple((tag("</"), name, multispace0, char('>')))(input) {
-        Ok((i, o)) => Ok((
-            i,
-            StartElement {
-                name: unsafe { std::str::from_utf8_unchecked(o.1) },
-            },
-        )),
+        Ok((i, o)) => {
+            // println!("{:?}", o);
+            return Ok((
+                i,
+                EndElement {
+                    name: unsafe { std::str::from_utf8_unchecked(o.1) },
+                },
+            ));
+        }
 
         Err(e) => Err(e),
     }
@@ -259,6 +364,18 @@ fn ETag(input: &[u8]) -> IResult<&[u8], xml_sax::StartElement> {
 #[test]
 fn test_namestart_char_t() {
     let data = "<a.abc-ab1çroot><A/><B/><C/></root>".as_bytes();
+
+    // fn parser(s: &[u8]) -> IResult<&[u8], &[u8]> {
+    //     namestart_char_t(s)
+    // }
+
+    let res = STag(&data);
+    println!("{:?}", res);
+}
+
+#[test]
+fn test_stag() {
+    let data = r#"<A a="b"  c = "d"></A>"#.as_bytes();
 
     // fn parser(s: &[u8]) -> IResult<&[u8], &[u8]> {
     //     namestart_char_t(s)
@@ -390,3 +507,23 @@ fn test_xml3() {
     let res = parser(&data);
     println!("{:?}", res);
 }
+
+enum ParserState {
+    Content,
+    TagStart,
+}
+
+struct OxideParser {
+    state: ParserState,
+}
+
+impl OxideParser {
+    // This method "consumes" the resources of the caller object
+    // `self` desugars to `self: Self`
+
+    fn read_event<'a, 'b>(&'a mut self, buf: &'b [u8]) -> xml_sax::Event<'b> {
+        xml_sax::Event::StartDocument
+    }
+}
+
+// https://github.com/rust-bakery/generator_nom/blob/master/src/main.rs
