@@ -1,4 +1,8 @@
-use std::ops::{Range, RangeFrom, RangeFull};
+use std::{
+    io::{BufRead, BufReader, Read},
+    ops::{Range, RangeFrom, RangeFull},
+    vec,
+};
 
 use nom::{
     branch::alt,
@@ -16,7 +20,7 @@ use nom::{
     multi::{many0, many1, separated_list0},
     number::complete::double,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    AsChar, Err, IResult, InputIter, InputLength, Needed, Parser, Slice,
+    AsChar, Err, IResult, InputIter, InputLength, Needed, Offset, Parser, Slice,
 };
 
 // https://tools.ietf.org/html/rfc3629
@@ -233,18 +237,18 @@ fn Reference(input: &[u8]) -> IResult<&[u8], &[u8]> {
 // [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
 
 fn AttValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(alt((
+    alt((
         delimited(
             char('"'),
-            many0_custom(alt((is_not(r#"<&""#), Reference))),
+            recognize(many0_custom(alt((is_not(r#"<&""#), Reference)))),
             char('"'),
         ),
         delimited(
             char('\''),
-            many0_custom(alt((is_not(r#"<&""#), Reference))),
+            recognize(many0_custom(alt((is_not(r#"<&""#), Reference)))),
             char('\''),
         ),
-    )))(input)
+    ))(input)
 }
 
 // [25] Eq ::= S? '=' S?
@@ -297,7 +301,7 @@ pub struct EndElement<'a> {
     pub name: &'a str,
 }
 
-fn STag(input: &[u8]) -> IResult<&[u8], StartElement> {
+fn STag<'a>(input: &'a [u8]) -> IResult<&[u8], StartElement<'a>> {
     match tuple((
         char('<'),
         name,
@@ -306,7 +310,6 @@ fn STag(input: &[u8]) -> IResult<&[u8], StartElement> {
     ))(input)
     {
         Ok((i, o)) => {
-            println!("{:?}", o);
             return Ok((
                 i,
                 StartElement {
@@ -513,17 +516,101 @@ enum ParserState {
     TagStart,
 }
 
-struct OxideParser {
+struct OxideParser<R: Read> {
     state: ParserState,
+    bufreader: BufReader<R>,
+    buffer2: Vec<u8>,
+    offset: usize,
 }
 
-impl OxideParser {
+impl<R: Read> OxideParser<R> {
     // This method "consumes" the resources of the caller object
     // `self` desugars to `self: Self`
 
-    fn read_event<'a, 'b>(&'a mut self, buf: &'b [u8]) -> xml_sax::Event<'b> {
-        xml_sax::Event::StartDocument
+    fn start(reader: R) -> OxideParser<R> {
+        OxideParser {
+            state: ParserState::Content,
+            bufreader: BufReader::with_capacity(9, reader),
+            offset: 0,
+            buffer2: vec![],
+        }
+    }
+    // , buf: &'b [u8]
+    fn read_event<'a, 'b, 'c>(&'a mut self) -> StartElement<'a> {
+        // self.bufreader.consume(self.offset);
+        self.buffer2.drain(0..self.offset);
+        self.offset = 0;
+        let mut done = false;
+
+        // let mut event: StartElement = StartElement {
+        //     name: "",
+        //     attributes: vec![],
+        // };
+        let mut event1: StartElement<'a>; //&'a
+        loop {
+            println!("try to read: {:?}", unsafe {
+                std::str::from_utf8_unchecked(&self.buffer2)
+            });
+
+            if !done {
+                self.bufreader.fill_buf().unwrap();
+                let data2 = self.bufreader.buffer();
+
+                self.buffer2.extend_from_slice(data2);
+
+                self.bufreader.consume(data2.len());
+                {
+                    let res = STag(&self.buffer2);
+                    match res {
+                        Ok(parseresult) => {
+                            self.offset = self.buffer2.offset(parseresult.0);
+                            // event1 = parseresult.1;
+                            return parseresult.1;
+                            done = true
+                        }
+                        Err(Err::Incomplete(err)) => {
+                            // panic!()
+                        }
+                        Err(_) => {
+                            done = true;
+                            panic!()
+                        }
+                    }
+                }
+            }
+        }
+
+        // let res = STag(&self.buffer2);
+        // match res {
+        //     Ok(parseresult) => {
+        //         self.offset = self.buffer2.offset(parseresult.0);
+        //         event = parseresult.1;
+        //         done = true
+        //     }
+        //     Err(Err::Incomplete(err)) => {
+        //         panic!();
+        //     }
+        //     Err(_) => {
+        //         done = true;
+        //         panic!();
+        //     }
+        // }
     }
 }
 
-// https://github.com/rust-bakery/generator_nom/blob/master/src/main.rs
+#[test]
+fn test_parser1() {
+    let data = "<root><A a='x'><B><C/></root>".as_bytes();
+
+    // let mut buf = vec![];
+    let mut p = OxideParser::start(data);
+
+    let res = p.read_event();
+    println!("{:?}", res);
+
+    let res = p.read_event();
+    println!("{:?}", res);
+
+    let res = p.read_event();
+    println!("{:?}", res);
+}
