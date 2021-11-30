@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use parser::prepare_rules;
-use parser::*;
+use crate::parser::prepare_rules;
+use crate::parser::*;
 
 pub fn get() {
     let mut parser_rules = prepare_rules();

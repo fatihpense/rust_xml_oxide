@@ -1,12 +1,12 @@
-use parser::parse_with_rule;
-use parser::parse_with_rule2;
-use parser::prepare_rules;
-use parser::ParsingPassLogStream;
+use crate::parser::parse_with_rule;
+use crate::parser::parse_with_rule2;
+use crate::parser::prepare_rules;
+use crate::parser::ParsingPassLogStream;
 
 use std::collections::HashMap;
 use std::io::Read;
 
-use char_iter;
+use crate::char_iter;
 use std::char;
 
 use xml_sax::*;
@@ -17,8 +17,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct SaxParser {
-    content_handler: Option<Rc<RefCell<ContentHandler>>>,
-    stats_handler: Option<Rc<RefCell<StatsHandler>>>,
+    content_handler: Option<Rc<RefCell<dyn ContentHandler>>>,
+    stats_handler: Option<Rc<RefCell<dyn StatsHandler>>>,
     counter: i64,
     element_names: Vec<String>,
     attribute_values: Vec<String>,
@@ -72,18 +72,18 @@ impl SAXAttributes for Attributes {
         self.attribute_vec.len()
     }
 
-    fn get_by_index(&self, index: usize) -> Option<Box<SAXAttribute>> {
+    fn get_by_index(&self, index: usize) -> Option<Box<dyn SAXAttribute>> {
         match self.attribute_vec.get(index) {
             // Some(val) => Some(Box::new((*val).clone())),
             Some(val) => {
                 let x = *val.clone();
-                Some(Box::new(x) as Box<SAXAttribute>)
+                Some(Box::new(x) as Box<dyn SAXAttribute>)
             }
             None => None,
         }
     }
 
-    fn iter(&self) -> Box<Iterator<Item = Box<SAXAttribute>>> {
+    fn iter(&self) -> Box<dyn Iterator<Item = Box<dyn SAXAttribute>>> {
         let x = AttributesIter {
             attribute_vec: self.attribute_vec.clone(),
             cur: 0,
@@ -98,10 +98,10 @@ pub struct AttributesIter {
 }
 
 impl Iterator for AttributesIter {
-    type Item = Box<SAXAttribute>;
-    fn next(&mut self) -> Option<Box<SAXAttribute>> {
+    type Item = Box<dyn SAXAttribute>;
+    fn next(&mut self) -> Option<Box<dyn SAXAttribute>> {
         let r = match self.attribute_vec.get(self.cur) {
-            Some(val) => Some((*val).clone() as Box<SAXAttribute>),
+            Some(val) => Some((*val).clone() as Box<dyn SAXAttribute>),
             None => None,
         };
 
@@ -139,7 +139,7 @@ impl<'a> ParsingPassLogStream for SaxParser {
             }
         }
     }
-    fn try(&mut self, rulename: String, _: usize) -> () {
+    fn try2(&mut self, rulename: String, _: usize) -> () {
         //starting_pos _
         //println!("try rule: {:?}",rulename );
         if rulename == "STag" || rulename == "EmptyElemTag" {

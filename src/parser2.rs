@@ -1,11 +1,11 @@
 #![allow(warnings, unused)]
 
-use char_iter;
+use crate::char_iter;
 use itertools;
 use std::collections::HashMap;
 use std::io::Read;
 
-use parser;
+use crate::parser;
 use xml_sax::*;
 
 use crate::parser::{peek_collect_start_end, peek_nth, remove_nth, ParsingRule, RuleType};

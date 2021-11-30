@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use crate::char_iter;
 use itertools;
-use char_iter;
+use std::collections::HashMap;
 use std::io::Read;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -849,7 +849,7 @@ pub enum ParsingResult {
 }
 
 pub trait ParsingPassLogStream {
-    fn try(&mut self, rule_name: String, starting_pos: usize) -> ();
+    fn try2(&mut self, rule_name: String, starting_pos: usize) -> ();
     fn pass(
         &mut self,
         rule_name: String,
@@ -857,7 +857,7 @@ pub trait ParsingPassLogStream {
         starting_pos: usize,
         ending_pos: usize,
     ) -> ();
-    fn offset(&mut self, usize) -> ();
+    fn offset(&mut self, offset: usize) -> ();
 }
 
 // state_vec (child_no,child starting pos,no backtrack required)
@@ -873,7 +873,7 @@ pub fn parse_with_rule<T: ParsingPassLogStream>(
     state_vec: &mut Vec<(usize, usize, bool)>,
     mut logger: T,
 ) -> (T, ParsingResult) {
-    logger.try(rule.rule_name.clone(), starting_pos);
+    logger.try2(rule.rule_name.clone(), starting_pos);
 
     match rule.rule_type {
         RuleType::Chars => {
@@ -1201,7 +1201,7 @@ pub fn parse_with_rule2<T: ParsingPassLogStream, R: Read>(
 ) -> (usize, T, ParsingResult) {
     let mut offset_plus = 0;
 
-    logger.try(rule.rule_name.clone(), starting_pos);
+    logger.try2(rule.rule_name.clone(), starting_pos);
 
     match rule.rule_type {
         RuleType::Chars => {
@@ -1442,7 +1442,8 @@ pub fn parse_with_rule2<T: ParsingPassLogStream, R: Read>(
                 );
             }
 
-            if rule.rule_name == "STag" || rule.rule_name == "EmptyElemTag"
+            if rule.rule_name == "STag"
+                || rule.rule_name == "EmptyElemTag"
                 || rule.rule_name == "ETag"
             {
                 offset_plus = new_starting_pos - offset;
@@ -1642,7 +1643,8 @@ pub fn peek_nth<R: Read>(iter: &mut itertools::MultiPeek<char_iter::Chars<R>>, n
     for _ in 0..nth {
         iter.peek();
     }
-    let cex = iter.peek()
+    let cex = iter
+        .peek()
         .map(|x| x.as_ref().map(|y| y.clone()))
         .unwrap()
         .unwrap();
@@ -1661,7 +1663,8 @@ pub fn peek_collect_start_end<R: Read>(
         iter.peek();
     }
     for _ in start..end {
-        let cex = iter.peek()
+        let cex = iter
+            .peek()
             .map(|x| x.as_ref().map(|y| y.clone()))
             .unwrap()
             .unwrap();
