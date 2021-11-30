@@ -34,7 +34,7 @@ impl xml_sax::ContentHandler for MySaxHandler {
         uri: &str,
         local_name: &str,
         qualified_name: &str,
-        attributes: &xml_sax::SAXAttributes,
+        attributes: &dyn xml_sax::SAXAttributes,
     ) {
         assert_eq!(self.document_state, 1);
         self.element_namespace_data.push_str(qualified_name);

@@ -29,7 +29,7 @@ impl xml_sax::ContentHandler for MySaxHandler {
         uri: &str,
         local_name: &str,
         qualified_name: &str,
-        attributes: &xml_sax::SAXAttributes,
+        attributes: &dyn xml_sax::SAXAttributes,
     ) {
         self.counter = self.counter + 1;
         println!("{}", qualified_name);
@@ -82,7 +82,7 @@ impl xml_sax::ContentHandler for MyCollectorSaxHandler {
         uri: &str,
         local_name: &str,
         qualified_name: &str,
-        attributes: &xml_sax::SAXAttributes,
+        attributes: &dyn xml_sax::SAXAttributes,
     ) {
         self.start_counter = self.start_counter + 1;
         self.start_el_name_vec.push(qualified_name.to_owned());
