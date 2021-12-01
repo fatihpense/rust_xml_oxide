@@ -514,6 +514,29 @@ fn test_chardata() {
 // [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
 //we will use state machine instead of this rule to make it streamable
 
+enum ContentRelaxed<'a> {
+    CharData(&'a [u8]),
+    StartElement(StartElement<'a>),
+}
+
+fn content_relaxed_CharData(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match CharData(input) {
+        Ok(succ) => Ok((succ.0, ContentRelaxed::CharData(succ.1))),
+        Err(err) => return Err(err),
+    }
+}
+fn content_relaxed_STag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match STag(input) {
+        Ok(succ) => Ok((succ.0, ContentRelaxed::StartElement(succ.1))),
+        Err(err) => return Err(err),
+    }
+}
+
+// [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | ... todo: add
+fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    alt((content_relaxed_CharData, content_relaxed_STag))(input)
+}
+
 #[test]
 fn test_xml3() {
     let data = "<root><A/><B/><C/></root>".as_bytes();
@@ -531,7 +554,7 @@ enum ParserState {
     TagStart,
 }
 
-struct OxideParser<R: Read> {
+pub struct OxideParser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
     buffer2: Vec<u8>,
@@ -543,7 +566,7 @@ impl<R: Read> OxideParser<R> {
     // This method "consumes" the resources of the caller object
     // `self` desugars to `self: Self`
 
-    fn start(reader: R) -> OxideParser<R> {
+    pub fn start(reader: R) -> OxideParser<R> {
         OxideParser {
             state: ParserState::Content,
             bufreader: BufReader::with_capacity(30, reader),
@@ -563,7 +586,7 @@ impl<R: Read> OxideParser<R> {
     }
 
     // , buf: &'b [u8]
-    fn read_event<'a, 'b, 'c>(&'a mut self) -> StartElement<'a> {
+    pub fn read_event<'a, 'b, 'c>(&'a mut self) -> xml_sax::Event<'a> {
         // self.bufreader.consume(self.offset);
         self.buffer2.drain(0..self.offset);
         self.offset = 0;
@@ -578,7 +601,7 @@ impl<R: Read> OxideParser<R> {
         //     attributes: vec![],
         // };
         let mut event1: StartElement; //<'b>; //&'a
-        let mut event2: StartElement;
+        let mut event2: xml_sax::StartElement;
 
         println!("try to read: {:?}", unsafe {
             std::str::from_utf8_unchecked(&self.buffer2)
@@ -624,18 +647,18 @@ impl<R: Read> OxideParser<R> {
                     });
                 }
 
-                let mut attributes: Vec<SAXAttribute> = vec![];
+                let mut attributes: Vec<xml_sax::Attribute> = vec![];
                 for att in attributes2 {
                     // let qualified_name = &self.strbuffer[start..(start + size)];
                     // let value = &self.strbuffer[start..(start + size)];
 
-                    attributes.push(SAXAttribute {
+                    attributes.push(xml_sax::Attribute {
                         value: &self.strbuffer[att.value],
                         qualified_name: &self.strbuffer[att.qualified_name],
                     });
                 }
 
-                event2 = StartElement {
+                event2 = xml_sax::StartElement {
                     name: &self.strbuffer[start..(start + size)],
                     attributes: attributes,
                 }
@@ -652,8 +675,8 @@ impl<R: Read> OxideParser<R> {
                 panic!()
             }
         }
+        xml_sax::Event::StartElement(event2)
 
-        event2
         // let res = STag(&self.buffer2);
         // match res {
         //     Ok(parseresult) => {
@@ -681,8 +704,16 @@ fn test_parser1() {
     loop {
         let res = p.read_event();
         println!("{:?}", res);
-        if res.name == "C" {
-            break;
+        match res {
+            xml_sax::Event::StartDocument => todo!(),
+            xml_sax::Event::EndDocument => todo!(),
+            xml_sax::Event::StartElement(el) => {
+                if el.name == "C" {
+                    break;
+                }
+            }
+            xml_sax::Event::EndElement(_) => todo!(),
+            xml_sax::Event::Characters(_) => todo!(),
         }
     }
 
