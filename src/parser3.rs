@@ -245,7 +245,7 @@ fn AttValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
         ),
         delimited(
             char('\''),
-            recognize(many0_custom(alt((is_not(r#"<&""#), Reference)))),
+            recognize(many0_custom(alt((is_not(r#"<&'"#), Reference)))),
             char('\''),
         ),
     ))(input)
@@ -291,6 +291,16 @@ pub struct SAXAttribute<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SAXAttribute2 {
+    pub value: std::ops::Range<usize>,
+    pub qualified_name: std::ops::Range<usize>,
+    // fn get_value(&self) -> &str;
+    // fn get_local_name(&self) -> &str;
+    // fn get_qualified_name(&self) -> &str;
+    // fn get_uri(&self) -> &str;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StartElement<'a> {
     pub name: &'a str,
     pub attributes: Vec<SAXAttribute<'a>>,
@@ -306,6 +316,7 @@ fn STag<'a>(input: &'a [u8]) -> IResult<&[u8], StartElement<'a>> {
         char('<'),
         name,
         many0(preceded(multispace0, Attribute)),
+        multispace0,
         char('>'),
     ))(input)
     {
@@ -329,6 +340,7 @@ fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], StartElement> {
         char('<'),
         name,
         many0(preceded(multispace0, Attribute)),
+        multispace0,
         tag("/>"),
     ))(input)
     {
@@ -379,11 +391,14 @@ fn test_namestart_char_t() {
 #[test]
 fn test_stag() {
     let data = r#"<A a="b"  c = "d"></A>"#.as_bytes();
+    let res = STag(&data);
+    println!("{:?}", res);
 
-    // fn parser(s: &[u8]) -> IResult<&[u8], &[u8]> {
-    //     namestart_char_t(s)
-    // }
+    let data = r#"<A a='x'>"#.as_bytes();
+    let res = STag(&data);
+    println!("{:?}", res);
 
+    let data = r#"<B b="val" >"#.as_bytes();
     let res = STag(&data);
     println!("{:?}", res);
 }
@@ -520,6 +535,7 @@ struct OxideParser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
     buffer2: Vec<u8>,
+    strbuffer: String,
     offset: usize,
 }
 
@@ -530,11 +546,22 @@ impl<R: Read> OxideParser<R> {
     fn start(reader: R) -> OxideParser<R> {
         OxideParser {
             state: ParserState::Content,
-            bufreader: BufReader::with_capacity(9, reader),
+            bufreader: BufReader::with_capacity(30, reader),
             offset: 0,
             buffer2: vec![],
+            strbuffer: String::new(),
         }
     }
+
+    fn read_data(&mut self) {
+        self.bufreader.fill_buf().unwrap();
+        let data2 = self.bufreader.buffer();
+
+        self.buffer2.extend_from_slice(data2);
+
+        self.bufreader.consume(data2.len());
+    }
+
     // , buf: &'b [u8]
     fn read_event<'a, 'b, 'c>(&'a mut self) -> StartElement<'a> {
         // self.bufreader.consume(self.offset);
@@ -542,44 +569,91 @@ impl<R: Read> OxideParser<R> {
         self.offset = 0;
         let mut done = false;
 
+        if self.bufreader.capacity() > self.buffer2.len() {
+            self.read_data();
+        }
+
         // let mut event: StartElement = StartElement {
         //     name: "",
         //     attributes: vec![],
         // };
-        let mut event1: StartElement<'a>; //&'a
-        loop {
-            println!("try to read: {:?}", unsafe {
-                std::str::from_utf8_unchecked(&self.buffer2)
-            });
+        let mut event1: StartElement; //<'b>; //&'a
+        let mut event2: StartElement;
 
-            if !done {
-                self.bufreader.fill_buf().unwrap();
-                let data2 = self.bufreader.buffer();
+        println!("try to read: {:?}", unsafe {
+            std::str::from_utf8_unchecked(&self.buffer2)
+        });
 
-                self.buffer2.extend_from_slice(data2);
+        let res = STag(&self.buffer2);
+        match res {
+            Ok(parseresult) => {
+                self.offset = self.buffer2.offset(parseresult.0);
+                event1 = parseresult.1;
+                // return parseresult.1;
+                done = true;
 
-                self.bufreader.consume(data2.len());
-                {
-                    let res = STag(&self.buffer2);
-                    match res {
-                        Ok(parseresult) => {
-                            self.offset = self.buffer2.offset(parseresult.0);
-                            // event1 = parseresult.1;
-                            return parseresult.1;
-                            done = true
-                        }
-                        Err(Err::Incomplete(err)) => {
-                            // panic!()
-                        }
-                        Err(_) => {
-                            done = true;
-                            panic!()
-                        }
-                    }
+                //todo decode
+                let start = self.strbuffer.len();
+                let size = event1.name.len();
+                self.strbuffer.push_str(event1.name);
+
+                let mut attributes2: Vec<SAXAttribute2> = vec![];
+                for att in event1.attributes {
+                    let start = self.strbuffer.len();
+                    let size = att.qualified_name.len();
+                    self.strbuffer.push_str(att.qualified_name);
+                    let qualified_name_range = Range {
+                        start: start,
+                        end: start + size,
+                    };
+
+                    let start = self.strbuffer.len();
+                    let size = att.value.len();
+                    self.strbuffer.push_str(att.value);
+                    let value_range = Range {
+                        start: start,
+                        end: start + size,
+                    };
+
+                    // let qualified_name = &self.strbuffer[start..(start + size)];
+                    // let value = &self.strbuffer[start..(start + size)];
+
+                    attributes2.push(SAXAttribute2 {
+                        value: value_range,
+                        qualified_name: qualified_name_range,
+                    });
                 }
+
+                let mut attributes: Vec<SAXAttribute> = vec![];
+                for att in attributes2 {
+                    // let qualified_name = &self.strbuffer[start..(start + size)];
+                    // let value = &self.strbuffer[start..(start + size)];
+
+                    attributes.push(SAXAttribute {
+                        value: &self.strbuffer[att.value],
+                        qualified_name: &self.strbuffer[att.qualified_name],
+                    });
+                }
+
+                event2 = StartElement {
+                    name: &self.strbuffer[start..(start + size)],
+                    attributes: attributes,
+                }
+            }
+            Err(Err::Incomplete(err)) => {
+                // panic!()
+                // self.read_data();
+                // if read bytes are 0 then return eof, otherwise return dummy event
+                panic!()
+            }
+            Err(e) => {
+                println!("err: {:?}", e);
+                done = true;
+                panic!()
             }
         }
 
+        event2
         // let res = STag(&self.buffer2);
         // match res {
         //     Ok(parseresult) => {
@@ -600,17 +674,24 @@ impl<R: Read> OxideParser<R> {
 
 #[test]
 fn test_parser1() {
-    let data = "<root><A a='x'><B><C/></root>".as_bytes();
+    let data = r#"<root><A a='x'><B b="val" a:12='val2' ><C></root>"#.as_bytes();
 
     // let mut buf = vec![];
     let mut p = OxideParser::start(data);
+    loop {
+        let res = p.read_event();
+        println!("{:?}", res);
+        if res.name == "C" {
+            break;
+        }
+    }
 
-    let res = p.read_event();
-    println!("{:?}", res);
+    // let res = p.read_event();
+    // println!("{:?}", res);
 
-    let res = p.read_event();
-    println!("{:?}", res);
+    // let res = p.read_event();
+    // println!("{:?}", res);
 
-    let res = p.read_event();
-    println!("{:?}", res);
+    // let res = p.read_event();
+    // println!("{:?}", res);
 }
