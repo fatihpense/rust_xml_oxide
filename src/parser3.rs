@@ -183,7 +183,7 @@ pub fn namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
     }
 }
 
-pub fn many0_custom<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
+pub fn many0_custom_chardata<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
     I: Clone + InputLength,
     F: Parser<I, O, E>,
@@ -195,7 +195,35 @@ where
             let len = i.input_len();
             match f.parse(i.clone()) {
                 Err(Err::Error(_)) => return Ok((i, ())),
-                Err(e) => return Err(e),
+                // Err(e) => return Err(e),
+                Err(e) => return Ok((i, ())),
+                Ok((i1, o)) => {
+                    // infinite loop check: the parser must always consume
+                    if i1.input_len() == len {
+                        return Err(Err::Error(E::from_error_kind(i, ErrorKind::Many0)));
+                    }
+
+                    i = i1;
+                    //   acc.push(o);
+                }
+            }
+        }
+    }
+}
+pub fn many0_custom_trycomplete<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
+where
+    I: Clone + InputLength,
+    F: Parser<I, O, E>,
+    E: ParseError<I>,
+{
+    move |mut i: I| {
+        // let mut acc = crate::lib::std::vec::Vec::with_capacity(4);
+        loop {
+            let len = i.input_len();
+            match f.parse(i.clone()) {
+                Err(Err::Error(_)) => return Ok((i, ())),
+                Err(e) => return Err(e), //returns incomplete here
+                // Err(e) => return Ok((i, ())),
                 Ok((i1, o)) => {
                     // infinite loop check: the parser must always consume
                     if i1.input_len() == len {
@@ -211,7 +239,7 @@ where
 }
 
 fn name(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(pair(namestart_char, many0_custom(namechar)))(input)
+    recognize(pair(namestart_char, many0_custom_trycomplete(namechar)))(input)
 }
 
 // [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
@@ -240,12 +268,12 @@ fn AttValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
     alt((
         delimited(
             char('"'),
-            recognize(many0_custom(alt((is_not(r#"<&""#), Reference)))),
+            recognize(many0_custom_trycomplete(alt((is_not(r#"<&""#), Reference)))),
             char('"'),
         ),
         delimited(
             char('\''),
-            recognize(many0_custom(alt((is_not(r#"<&'"#), Reference)))),
+            recognize(many0_custom_trycomplete(alt((is_not(r#"<&'"#), Reference)))),
             char('\''),
         ),
     ))(input)
@@ -375,6 +403,12 @@ fn ETag(input: &[u8]) -> IResult<&[u8], EndElement> {
         Err(e) => Err(e),
     }
 }
+#[test]
+fn test_etag() {
+    let data = r#"</A>"#.as_bytes();
+    let res = ETag(&data);
+    println!("{:?}", res);
+}
 
 #[test]
 fn test_namestart_char_t() {
@@ -487,28 +521,59 @@ fn test_chardata_single() {
 }
 
 // [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
+//our implementation requires at least one char
 fn CharData(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(many0_custom(CharData_single))(input)
+    recognize(tuple((
+        CharData_single,
+        many0_custom_chardata(CharData_single),
+    )))(input)
 }
 
 #[test]
 fn test_chardata() {
-    assert_eq!(
-        CharData("abc]".as_bytes()),
-        Err(Err::Incomplete(Needed::Unknown))
-    );
+    assert_eq!(CharData("abc]".as_bytes()), Ok((&b"]"[..], &b"abc"[..])));
     assert_eq!(
         CharData("]]".as_bytes()),
         Err(Err::Incomplete(Needed::Unknown))
     );
-    assert_eq!(CharData("]]>".as_bytes()), Ok((&b"]]>"[..], &b""[..])));
+    //since we want chardata to parse at least 1 char now:
+    // assert_eq!(CharData("]]>".as_bytes()), Ok((&b"]]>"[..], &b""[..])));
+    assert_eq!(
+        CharData("]]>".as_bytes()),
+        Err(Err::Error(error_position!(
+            "]]>".as_bytes(),
+            ErrorKind::Char
+        )))
+    );
     assert_eq!(CharData("]]<".as_bytes()), Ok((&b"<"[..], &b"]]"[..])));
-    assert_eq!(CharData("&".as_bytes()), Ok((&b"&"[..], &b""[..])));
-    assert_eq!(CharData("<".as_bytes()), Ok((&b"<"[..], &b""[..])));
+
+    //since we want chardata to parse at least 1 char now:
+    // assert_eq!(CharData("&".as_bytes()), Ok((&b"&"[..], &b""[..])));
+
+    assert_eq!(CharData("a&".as_bytes()), Ok((&b"&"[..], &b"a"[..])));
+    assert_eq!(CharData("a<".as_bytes()), Ok((&b"<"[..], &b"a"[..])));
 
     //this was returning incomplete since the next char can be the start of "]]>", but we plan to cut it off for streaming!
     //see ref#streamcut
     assert_eq!(CharData("abc".as_bytes()), Ok((&b""[..], &b"abc"[..])));
+
+    let data: Vec<u8> = [
+        65, 108, 99, 104, 101, 109, 121, 32, 40, 102, 114, 111, 109, 32, 65, 114, 97, 98, 105, 99,
+        58, 32, 97, 108, 45, 107, 196, 171, 109, 105, 121, 196,
+    ]
+    .to_vec();
+    let remainder: Vec<u8> = [196].to_vec();
+
+    println!("try to read: {:?}", unsafe {
+        std::str::from_utf8_unchecked(&data[0..31])
+    });
+    assert_eq!(
+        CharData(&data),
+        Ok((
+            &remainder[0..1],
+            &"Alchemy (from Arabic: al-kīmiy".as_bytes()[..]
+        ))
+    );
 }
 
 // [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
@@ -517,6 +582,8 @@ fn test_chardata() {
 enum ContentRelaxed<'a> {
     CharData(&'a [u8]),
     StartElement(StartElement<'a>),
+    EmptyElemTag(StartElement<'a>),
+    EndElement(EndElement<'a>),
 }
 
 fn content_relaxed_CharData(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
@@ -532,9 +599,20 @@ fn content_relaxed_STag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     }
 }
 
+fn content_relaxed_ETag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match ETag(input) {
+        Ok(succ) => Ok((succ.0, ContentRelaxed::EndElement(succ.1))),
+        Err(err) => return Err(err),
+    }
+}
+
 // [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | ... todo: add
 fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
-    alt((content_relaxed_CharData, content_relaxed_STag))(input)
+    alt((
+        content_relaxed_CharData,
+        content_relaxed_STag,
+        content_relaxed_ETag,
+    ))(input)
 }
 
 #[test]
@@ -560,6 +638,58 @@ pub struct OxideParser<R: Read> {
     buffer2: Vec<u8>,
     strbuffer: String,
     offset: usize,
+}
+
+fn convert_start_element<'a>(
+    strbuffer: &'a mut String,
+    event1: StartElement,
+) -> xml_sax::Event<'a> {
+    let start = strbuffer.len();
+    let size = event1.name.len();
+    strbuffer.push_str(event1.name);
+
+    let mut attributes2: Vec<SAXAttribute2> = vec![];
+    for att in event1.attributes {
+        let start = strbuffer.len();
+        let size = att.qualified_name.len();
+        strbuffer.push_str(att.qualified_name);
+        let qualified_name_range = Range {
+            start: start,
+            end: start + size,
+        };
+
+        let start = strbuffer.len();
+        let size = att.value.len();
+        strbuffer.push_str(att.value);
+        let value_range = Range {
+            start: start,
+            end: start + size,
+        };
+
+        // let qualified_name = &self.strbuffer[start..(start + size)];
+        // let value = &self.strbuffer[start..(start + size)];
+
+        attributes2.push(SAXAttribute2 {
+            value: value_range,
+            qualified_name: qualified_name_range,
+        });
+    }
+
+    let mut attributes: Vec<xml_sax::Attribute> = vec![];
+    for att in attributes2 {
+        // let qualified_name = &self.strbuffer[start..(start + size)];
+        // let value = &self.strbuffer[start..(start + size)];
+
+        attributes.push(xml_sax::Attribute {
+            value: &strbuffer[att.value],
+            qualified_name: &strbuffer[att.qualified_name],
+        });
+    }
+
+    xml_sax::Event::StartElement(xml_sax::StartElement {
+        name: &strbuffer[start..(start + size)],
+        attributes: attributes,
+    })
 }
 
 impl<R: Read> OxideParser<R> {
@@ -590,7 +720,6 @@ impl<R: Read> OxideParser<R> {
         // self.bufreader.consume(self.offset);
         self.buffer2.drain(0..self.offset);
         self.offset = 0;
-        let mut done = false;
 
         if self.bufreader.capacity() > self.buffer2.len() {
             self.read_data();
@@ -600,82 +729,66 @@ impl<R: Read> OxideParser<R> {
         //     name: "",
         //     attributes: vec![],
         // };
-        let mut event1: StartElement; //<'b>; //&'a
-        let mut event2: xml_sax::StartElement;
+        // let mut event1: StartElement; //<'b>; //&'a
+        let mut event2: xml_sax::Event;
 
-        println!("try to read: {:?}", unsafe {
-            std::str::from_utf8_unchecked(&self.buffer2)
-        });
-
-        let res = STag(&self.buffer2);
+        let res = content_relaxed(&self.buffer2);
         match res {
             Ok(parseresult) => {
                 self.offset = self.buffer2.offset(parseresult.0);
-                event1 = parseresult.1;
-                // return parseresult.1;
-                done = true;
 
-                //todo decode
-                let start = self.strbuffer.len();
-                let size = event1.name.len();
-                self.strbuffer.push_str(event1.name);
+                match parseresult.1 {
+                    ContentRelaxed::CharData(event1) => {
+                        let start = self.strbuffer.len();
+                        let size = event1.len();
+                        self.strbuffer
+                            .push_str(unsafe { std::str::from_utf8_unchecked(event1) });
 
-                let mut attributes2: Vec<SAXAttribute2> = vec![];
-                for att in event1.attributes {
-                    let start = self.strbuffer.len();
-                    let size = att.qualified_name.len();
-                    self.strbuffer.push_str(att.qualified_name);
-                    let qualified_name_range = Range {
-                        start: start,
-                        end: start + size,
-                    };
+                        event2 = xml_sax::Event::Characters(&self.strbuffer[start..(start + size)])
+                    }
+                    ContentRelaxed::StartElement(event1) => {
+                        //todo decode
+                        event2 = convert_start_element(&mut self.strbuffer, event1);
+                    }
+                    ContentRelaxed::EmptyElemTag(event1) => {
+                        //todo decode
+                        event2 = convert_start_element(&mut self.strbuffer, event1);
 
-                    let start = self.strbuffer.len();
-                    let size = att.value.len();
-                    self.strbuffer.push_str(att.value);
-                    let value_range = Range {
-                        start: start,
-                        end: start + size,
-                    };
+                        //todo add endelement after this?
+                    }
+                    ContentRelaxed::EndElement(event1) => {
+                        let start = self.strbuffer.len();
+                        let size = event1.name.len();
+                        self.strbuffer.push_str(event1.name);
 
-                    // let qualified_name = &self.strbuffer[start..(start + size)];
-                    // let value = &self.strbuffer[start..(start + size)];
-
-                    attributes2.push(SAXAttribute2 {
-                        value: value_range,
-                        qualified_name: qualified_name_range,
-                    });
-                }
-
-                let mut attributes: Vec<xml_sax::Attribute> = vec![];
-                for att in attributes2 {
-                    // let qualified_name = &self.strbuffer[start..(start + size)];
-                    // let value = &self.strbuffer[start..(start + size)];
-
-                    attributes.push(xml_sax::Attribute {
-                        value: &self.strbuffer[att.value],
-                        qualified_name: &self.strbuffer[att.qualified_name],
-                    });
-                }
-
-                event2 = xml_sax::StartElement {
-                    name: &self.strbuffer[start..(start + size)],
-                    attributes: attributes,
+                        event2 = xml_sax::Event::EndElement(xml_sax::EndElement {
+                            name: &self.strbuffer[start..(start + size)],
+                        })
+                    }
                 }
             }
-            Err(Err::Incomplete(err)) => {
+            Err(Err::Incomplete(e)) => {
                 // panic!()
                 // self.read_data();
                 // if read bytes are 0 then return eof, otherwise return dummy event
+                println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
+                println!("try to read: {:?}", unsafe {
+                    std::str::from_utf8_unchecked(&self.buffer2)
+                });
+                println!("err: {:?}", e);
                 panic!()
             }
             Err(e) => {
+                println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
+                println!("try to read: {:?}", unsafe {
+                    std::str::from_utf8_unchecked(&self.buffer2)
+                });
                 println!("err: {:?}", e);
-                done = true;
+
                 panic!()
             }
         }
-        xml_sax::Event::StartElement(event2)
+        event2
 
         // let res = STag(&self.buffer2);
         // match res {
@@ -697,7 +810,9 @@ impl<R: Read> OxideParser<R> {
 
 #[test]
 fn test_parser1() {
-    let data = r#"<root><A a='x'><B b="val" a:12='val2' ><C></root>"#.as_bytes();
+    let data = r#"<root><A a='x'>
+    <B b="val" a:12='val2' ><C></root>"#
+        .as_bytes();
 
     // let mut buf = vec![];
     let mut p = OxideParser::start(data);
@@ -713,7 +828,7 @@ fn test_parser1() {
                 }
             }
             xml_sax::Event::EndElement(_) => todo!(),
-            xml_sax::Event::Characters(_) => todo!(),
+            xml_sax::Event::Characters(c) => {}
         }
     }
 
