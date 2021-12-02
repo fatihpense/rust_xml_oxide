@@ -246,20 +246,25 @@ fn name(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
 fn CharRef(input: &[u8]) -> IResult<&[u8], &[u8]> {
     alt((
-        delimited(tag("&#"), take_while1(is_digit), char(';')),
-        delimited(tag("&#x"), take_while1(is_hex_digit), char(';')),
+        recognize(tuple((tag("&#"), take_while1(is_digit), char(';')))),
+        recognize(tuple((tag("&#x"), take_while1(is_hex_digit), char(';')))),
     ))(input)
 }
 
 // [68] EntityRef ::= '&' Name ';'
 
 fn EntityRef(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    delimited(tag("&"), name, char(';'))(input)
+    recognize(tuple((tag("&"), name, char(';'))))(input)
 }
 
 // [67] Reference ::= EntityRef | CharRef
 fn Reference(input: &[u8]) -> IResult<&[u8], &[u8]> {
     alt((EntityRef, CharRef))(input)
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Reference<'a> {
+    initial: &'a str,
+    // resolved: &'a str,
 }
 
 // [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
@@ -309,7 +314,7 @@ fn Attribute(input: &[u8]) -> IResult<&[u8], SAXAttribute> {
 // [40] STag ::= '<' Name (S Attribute)* S? '>'
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SAXAttribute<'a> {
+struct SAXAttribute<'a> {
     pub value: &'a str,
     pub qualified_name: &'a str,
     // fn get_value(&self) -> &str;
@@ -319,7 +324,7 @@ pub struct SAXAttribute<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SAXAttribute2 {
+struct SAXAttribute2 {
     pub value: std::ops::Range<usize>,
     pub qualified_name: std::ops::Range<usize>,
     // fn get_value(&self) -> &str;
@@ -329,13 +334,13 @@ pub struct SAXAttribute2 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StartElement<'a> {
+struct StartElement<'a> {
     pub name: &'a str,
     pub attributes: Vec<SAXAttribute<'a>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EndElement<'a> {
+struct EndElement<'a> {
     pub name: &'a str,
 }
 
@@ -584,6 +589,7 @@ enum ContentRelaxed<'a> {
     StartElement(StartElement<'a>),
     EmptyElemTag(StartElement<'a>),
     EndElement(EndElement<'a>),
+    Reference(Reference<'a>),
 }
 
 fn content_relaxed_CharData(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
@@ -606,12 +612,34 @@ fn content_relaxed_ETag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     }
 }
 
+//todo add endelement as next step or inform it is an emptyelem tag via event api?
+fn content_relaxed_EmptyElemTag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match EmptyElemTag(input) {
+        Ok(succ) => Ok((succ.0, ContentRelaxed::StartElement(succ.1))),
+        Err(err) => return Err(err),
+    }
+}
+
+fn content_relaxed_Reference(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match Reference(input) {
+        Ok(succ) => Ok((
+            succ.0,
+            ContentRelaxed::Reference(Reference {
+                initial: unsafe { std::str::from_utf8_unchecked(succ.1) },
+            }),
+        )),
+        Err(err) => return Err(err),
+    }
+}
+
 // [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | ... todo: add
 fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     alt((
         content_relaxed_CharData,
         content_relaxed_STag,
+        content_relaxed_EmptyElemTag,
         content_relaxed_ETag,
+        content_relaxed_Reference,
     ))(input)
 }
 
@@ -692,6 +720,17 @@ fn convert_start_element<'a>(
     })
 }
 
+fn push_str_get_range(strbuffer: &mut String, addition: &str) -> Range<usize> {
+    let start = strbuffer.len();
+    let size = addition.len();
+    let range = Range {
+        start: start,
+        end: start + size,
+    };
+    strbuffer.push_str(addition);
+    range
+}
+
 impl<R: Read> OxideParser<R> {
     // This method "consumes" the resources of the caller object
     // `self` desugars to `self: Self`
@@ -699,7 +738,7 @@ impl<R: Read> OxideParser<R> {
     pub fn start(reader: R) -> OxideParser<R> {
         OxideParser {
             state: ParserState::Content,
-            bufreader: BufReader::with_capacity(30, reader),
+            bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
             buffer2: vec![],
             strbuffer: String::new(),
@@ -720,6 +759,7 @@ impl<R: Read> OxideParser<R> {
         // self.bufreader.consume(self.offset);
         self.buffer2.drain(0..self.offset);
         self.offset = 0;
+        self.strbuffer.clear();
 
         if self.bufreader.capacity() > self.buffer2.len() {
             self.read_data();
@@ -763,6 +803,34 @@ impl<R: Read> OxideParser<R> {
 
                         event2 = xml_sax::Event::EndElement(xml_sax::EndElement {
                             name: &self.strbuffer[start..(start + size)],
+                        })
+                    }
+                    ContentRelaxed::Reference(event1) => {
+                        // let start = self.strbuffer.len();
+                        // let size = event1.initial.len();
+                        // let range_initial = Range {
+                        //     start: start,
+                        //     end: start + size,
+                        // };
+                        // self.strbuffer.push_str(event1.initial);
+
+                        let range: Range<usize> =
+                            push_str_get_range(&mut self.strbuffer, event1.initial);
+
+                        let range_resolved = match event1.initial {
+                            "&amp;" => push_str_get_range(&mut self.strbuffer, "&"),
+                            "&lt" => push_str_get_range(&mut self.strbuffer, "<"),
+                            "&gt;" => push_str_get_range(&mut self.strbuffer, ">"),
+                            "&quot;" => push_str_get_range(&mut self.strbuffer, "\""),
+                            "&apos;" => push_str_get_range(&mut self.strbuffer, "'"),
+                            _ => push_str_get_range(&mut self.strbuffer, event1.initial),
+                        };
+
+                        //todo resolve char refs
+                        //we are ignoring DTD entity refs
+                        event2 = xml_sax::Event::Reference(xml_sax::Reference {
+                            original: &self.strbuffer[range],
+                            resolved: &self.strbuffer[range_resolved],
                         })
                     }
                 }
@@ -829,6 +897,7 @@ fn test_parser1() {
             }
             xml_sax::Event::EndElement(_) => todo!(),
             xml_sax::Event::Characters(c) => {}
+            xml_sax::Event::Reference(c) => {}
         }
     }
 
