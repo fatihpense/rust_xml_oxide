@@ -878,6 +878,65 @@ fn test_comment() {
     );
 }
 
+// [18] CDSect ::= CDStart CData CDEnd
+
+// [19] CDStart ::= '<![CDATA['
+fn CDATASection_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("<![CDATA[")(input)
+}
+// [21] CDEnd ::= ']]>'
+fn CDATASection_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("]]>")(input)
+}
+
+// [20] CData ::= (Char* - (Char* ']]>' Char*))
+
+fn inside_CDATASection_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    //if input = 0 , don't send incomplete
+    // ref#streamcut
+    if input.len() == 0 {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+
+    // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
+    match tag::<&str, &[u8], Error<&[u8]>>("]]>")(input) {
+        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        _ => (),
+    };
+    inside_Comment_or_CDATA_single_pure(input)
+}
+
+fn CDATASection(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        CDATASection_start,
+        many0_custom_chardata(inside_CDATASection_single),
+        CDATASection_end,
+    )))(input)
+}
+
+#[test]
+fn test_cdata() {
+    assert_eq!(
+        CDATASection("<![CDATA[abc]]>a".as_bytes()),
+        Ok((&b"a"[..], &b"<![CDATA[abc]]>"[..]))
+    );
+
+    assert_eq!(
+        CDATASection("<![CDATA[]]>".as_bytes()),
+        Ok((&b""[..], &b"<![CDATA[]]>"[..]))
+    );
+
+    assert_eq!(
+        CDATASection("<![CDATA[ ]]".as_bytes()),
+        Err(Err::Incomplete(Needed::new(1)))
+    );
+    assert_eq!(
+        CDATASection("<![CDATA[ ]".as_bytes()),
+        Err(Err::Incomplete(Needed::new(2)))
+    );
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
     Content,
