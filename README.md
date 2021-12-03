@@ -1,6 +1,8 @@
-# xml_oxide [![crates.io](https://meritbadge.herokuapp.com/xml_oxide)](https://crates.io/crates/xml_oxide)
+# xml_oxide [![crates.io](https://img.shields.io/crates/v/xml_oxide.svg)](https://crates.io/crates/xml_oxide)
 Rust XML parser implementation for SAX interface: xml_sax
 
+## Important
+There is active development and soon the current API will change significantly. I'm changing the library to be a pull parser. I will update the the examples when the new version is ready.
 ### Features
 * It uses constant-like memory for large xml files.
 * It supports common XML structures and namespaces. No DTD etc. yet.

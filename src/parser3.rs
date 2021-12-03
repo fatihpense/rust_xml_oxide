@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use std::{
     io::{BufRead, BufReader, Read},
     ops::{Range, RangeFrom, RangeFull},
@@ -80,7 +81,8 @@ fn utf8_char_width(b: u8) -> usize {
 // [2] Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
 #[inline]
 pub fn is_xml_char_t(chr: char) -> bool {
-    (chr >= '\u{A}' && chr <= '\u{D}')
+    chr == '\u{9}'
+        || (chr >= '\u{A}' && chr <= '\u{D}')
         || (chr >= '\u{20}' && chr <= '\u{D7FF}')
         || (chr >= '\u{E000}' && chr <= '\u{FFFD}')
         || (chr >= '\u{10000}' && chr <= '\u{10FFFF}')
@@ -445,10 +447,10 @@ fn test_stag() {
 
 // [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
 // no '>' except ']]>'
-
+// The spec is not clear but we also apply Char restrictions
 #[inline]
 pub fn is_CharData_single_pure_t(chr: char) -> bool {
-    chr != '<' && chr != '&'
+    chr != '<' && chr != '&' && is_xml_char_t(chr)
 }
 
 pub fn CharData_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -775,6 +777,106 @@ fn test_XMLDecl() {
 
 // [1] document ::= prolog element Misc*
 // [22]   	prolog	   ::=   	XMLDecl? Misc* (doctypedecl Misc*)?
+
+// [15] Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+//spec seems to not allow empty comments? There are parsers that allow it.
+fn Comment_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("<!--")(input)
+}
+
+fn Comment_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("-->")(input)
+}
+
+// We don't need to exclude "-" we handle that in inside_Comment_single
+// #[inline]
+//  fn is_CharData_single_pure_t(chr: char) -> bool {
+//     chr != '<' && chr != '&' && is_xml_char_t(chr)
+// }
+
+fn inside_Comment_or_CDATA_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    if input.len() == 0 {
+        return Err(Err::Incomplete(Needed::new(1)));
+    }
+    let width = utf8_char_width(input[0]);
+
+    if input.len() < width {
+        return Err(Err::Incomplete(Needed::new(width - input.len())));
+    }
+
+    let c = match std::str::from_utf8(&input[..width]).ok() {
+        Some(s) => s.chars().next().unwrap(),
+        None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+    };
+
+    if is_xml_char_t(c) {
+        return Ok((&input[width..], &input[0..width]));
+    } else {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+}
+
+fn inside_Comment_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    //if input = 0 , don't send incomplete
+    // ref#streamcut
+    if input.len() == 0 {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+
+    // '--' should not appear in the comment, if we can't be sure because input is eof, we should request more data.
+    match tag::<&str, &[u8], Error<&[u8]>>("--")(input) {
+        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::new(1))),
+        _ => (),
+    };
+    inside_Comment_or_CDATA_single_pure(input)
+}
+
+fn Comment(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        Comment_start,
+        many0_custom_chardata(inside_Comment_single),
+        Comment_end,
+    )))(input)
+}
+
+#[test]
+fn test_comment() {
+    assert_eq!(
+        Comment("<!-- comment -->a".as_bytes()),
+        Ok((&b"a"[..], &b"<!-- comment -->"[..]))
+    );
+
+    assert_eq!(
+        Comment("<!---->cc".as_bytes()),
+        Ok((&b"cc"[..], &b"<!---->"[..]))
+    );
+
+    assert_eq!(
+        Comment("<!-- comment --->a".as_bytes()),
+        Err(Err::Error(error_position!(
+            "--->a".as_bytes(),
+            ErrorKind::Tag
+        )))
+    );
+
+    assert_eq!(
+        Comment("<!-- com--ment -->a".as_bytes()),
+        Err(Err::Error(error_position!(
+            "--ment -->a".as_bytes(),
+            ErrorKind::Tag
+        )))
+    );
+
+    assert_eq!(
+        Comment("<!--ok-".as_bytes()),
+        Err(Err::Incomplete(Needed::new(2)))
+    );
+    assert_eq!(
+        Comment("<!--ok--".as_bytes()),
+        Err(Err::Incomplete(Needed::new(1)))
+    );
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
