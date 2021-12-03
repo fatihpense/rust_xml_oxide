@@ -8,9 +8,9 @@ use nom::{
     branch::alt,
     bytes::streaming::{escaped, is_not, tag, take_while, take_while1},
     character::{
-        complete::{alphanumeric1 as alphanumeric, char, none_of, one_of},
+        complete::{alphanumeric1 as alphanumeric, char, multispace1, none_of, one_of},
         is_digit, is_hex_digit,
-        streaming::multispace0,
+        streaming::{alpha1, alphanumeric1, digit1, multispace0},
     },
     combinator::{cut, map, opt, recognize, value},
     error::{
@@ -196,6 +196,7 @@ where
             match f.parse(i.clone()) {
                 Err(Err::Error(_)) => return Ok((i, ())),
                 // Err(e) => return Err(e),
+                // ref#streamcut
                 Err(e) => return Ok((i, ())),
                 Ok((i1, o)) => {
                     // infinite loop check: the parser must always consume
@@ -655,9 +656,133 @@ fn test_xml3() {
     println!("{:?}", res);
 }
 
+// Parser Rules organized by W3C Spec
+
+// [26] VersionNum ::= '1.' [0-9]+
+fn VersionNum(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((tag("1."), digit1)))(input)
+}
+
+#[test]
+fn test_VersionNum() {
+    let data = r#"1.123 "#.as_bytes();
+    let res = VersionNum(&data);
+    println!("{:?}", res);
+}
+//  [24]   	VersionInfo	   ::=   	S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
+
+fn VersionInfo(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        multispace1,
+        tag("version"),
+        Eq,
+        alt((
+            delimited(char('"'), VersionNum, char('"')),
+            delimited(char('\''), VersionNum, char('\'')),
+        )),
+    )))(input)
+}
+#[test]
+fn test_VersionInfo() {
+    let data = r#"  version="1.0" "#.as_bytes();
+    let res = VersionInfo(&data);
+    println!("{:?}", res);
+}
+
+// [81]   	EncName	   ::=   	[A-Za-z] ([A-Za-z0-9._] | '-')*
+fn EncName(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        alpha1,
+        many0_custom_trycomplete(alt((alphanumeric1, tag("-"), tag("."), tag("_")))),
+    )))(input)
+}
+#[test]
+fn test_EncName() {
+    let data = r#"UTF-8 "#.as_bytes();
+    let res = EncName(&data);
+    println!("{:?}", res);
+}
+
+// [80]   	EncodingDecl	   ::=   	S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
+fn EncodingDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        multispace1,
+        tag("encoding"),
+        Eq,
+        alt((
+            delimited(char('"'), EncName, char('"')),
+            delimited(char('\''), EncName, char('\'')),
+        )),
+    )))(input)
+}
+#[test]
+fn test_EncodingDecl() {
+    let data = r#" encoding='EUC-JP' "#.as_bytes();
+    let res = EncodingDecl(&data);
+    println!("{:?}", res);
+}
+
+// [32] SDDecl ::= S 'standalone' Eq (("'" ('yes' | 'no') "'") | ('"' ('yes' | 'no') '"'))
+fn yes_mi_no_mu(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    alt((tag("yes"), tag("no")))(input)
+}
+fn SDDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        multispace1,
+        tag("standalone"),
+        Eq,
+        alt((
+            delimited(char('"'), yes_mi_no_mu, char('"')),
+            delimited(char('\''), yes_mi_no_mu, char('\'')),
+        )),
+    )))(input)
+}
+#[test]
+fn test_SDDecl() {
+    let data = r#"  standalone='yes' "#.as_bytes();
+    let res = SDDecl(&data);
+    println!("{:?}", res);
+}
+
+// [23] XMLDecl ::= '<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
+fn XMLDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        tag("<?xml"),
+        VersionInfo,
+        opt(EncodingDecl),
+        opt(SDDecl),
+        multispace0,
+        tag("?>"),
+    )))(input)
+}
+
+// [27]   	Misc	   ::=   	Comment | PI | S
+//todo: comment | PI, we may need to separate
+fn Misc(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(alt((multispace1,)))(input)
+}
+
+fn docstart_custom(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((XMLDecl, multispace0)))(input)
+}
+
+#[test]
+fn test_XMLDecl() {
+    let data = r#"<?xml version="1.0"  encoding="UTF-8" standalone='yes'?>"#.as_bytes();
+    let res = XMLDecl(&data);
+    println!("{:?}", res);
+}
+
+// [1] document ::= prolog element Misc*
+// [22]   	prolog	   ::=   	XMLDecl? Misc* (doctypedecl Misc*)?
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
     Content,
-    TagStart,
+    DocStart,
+    DocEnd,
+    //inside cdata ?
+    //inside comment ?
 }
 
 pub struct OxideParser<R: Read> {
@@ -671,7 +796,7 @@ pub struct OxideParser<R: Read> {
 fn convert_start_element<'a>(
     strbuffer: &'a mut String,
     event1: StartElement,
-) -> xml_sax::Event<'a> {
+) -> xml_sax::StartElement<'a> {
     let start = strbuffer.len();
     let size = event1.name.len();
     strbuffer.push_str(event1.name);
@@ -710,14 +835,15 @@ fn convert_start_element<'a>(
 
         attributes.push(xml_sax::Attribute {
             value: &strbuffer[att.value],
-            qualified_name: &strbuffer[att.qualified_name],
+            name: &strbuffer[att.qualified_name],
         });
     }
 
-    xml_sax::Event::StartElement(xml_sax::StartElement {
+    xml_sax::StartElement {
         name: &strbuffer[start..(start + size)],
         attributes: attributes,
-    })
+        is_empty: false,
+    }
 }
 
 fn push_str_get_range(strbuffer: &mut String, addition: &str) -> Range<usize> {
@@ -737,7 +863,7 @@ impl<R: Read> OxideParser<R> {
 
     pub fn start(reader: R) -> OxideParser<R> {
         OxideParser {
-            state: ParserState::Content,
+            state: ParserState::DocStart,
             bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
             buffer2: vec![],
@@ -772,6 +898,18 @@ impl<R: Read> OxideParser<R> {
         // let mut event1: StartElement; //<'b>; //&'a
         let mut event2: xml_sax::Event;
 
+        if self.state == ParserState::DocStart {
+            let res = docstart_custom(&self.buffer2);
+            match res {
+                Ok(parseresult) => {
+                    self.offset = self.buffer2.offset(parseresult.0);
+                    self.state = ParserState::Content;
+                    return xml_sax::Event::StartDocument;
+                }
+                Err(err) => panic!(),
+            }
+        }
+
         let res = content_relaxed(&self.buffer2);
         match res {
             Ok(parseresult) => {
@@ -788,12 +926,16 @@ impl<R: Read> OxideParser<R> {
                     }
                     ContentRelaxed::StartElement(event1) => {
                         //todo decode
-                        event2 = convert_start_element(&mut self.strbuffer, event1);
+                        event2 = xml_sax::Event::StartElement(convert_start_element(
+                            &mut self.strbuffer,
+                            event1,
+                        ));
                     }
                     ContentRelaxed::EmptyElemTag(event1) => {
                         //todo decode
-                        event2 = convert_start_element(&mut self.strbuffer, event1);
-
+                        let mut start_elem = convert_start_element(&mut self.strbuffer, event1);
+                        start_elem.is_empty = true;
+                        event2 = xml_sax::Event::StartElement(start_elem);
                         //todo add endelement after this?
                     }
                     ContentRelaxed::EndElement(event1) => {
@@ -829,7 +971,7 @@ impl<R: Read> OxideParser<R> {
                         //todo resolve char refs
                         //we are ignoring DTD entity refs
                         event2 = xml_sax::Event::Reference(xml_sax::Reference {
-                            original: &self.strbuffer[range],
+                            raw: &self.strbuffer[range],
                             resolved: &self.strbuffer[range_resolved],
                         })
                     }
@@ -839,6 +981,9 @@ impl<R: Read> OxideParser<R> {
                 // panic!()
                 // self.read_data();
                 // if read bytes are 0 then return eof, otherwise return dummy event
+                if self.buffer2.len() == 0 {
+                    return xml_sax::Event::EndDocument;
+                }
                 println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
                 println!("try to read: {:?}", unsafe {
                     std::str::from_utf8_unchecked(&self.buffer2)
