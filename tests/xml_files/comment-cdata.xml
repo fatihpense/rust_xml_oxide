@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <!-- This is a comment -->
+    <![CDATA[abc]]>
+    <![CDATA[<&>]]>
+</root>

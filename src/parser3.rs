@@ -593,6 +593,8 @@ enum ContentRelaxed<'a> {
     EmptyElemTag(StartElement<'a>),
     EndElement(EndElement<'a>),
     Reference(Reference<'a>),
+    CdataStart,
+    CommentStart,
 }
 
 fn content_relaxed_CharData(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
@@ -635,7 +637,21 @@ fn content_relaxed_Reference(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     }
 }
 
-// [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | ... todo: add
+fn content_relaxed_CdataStart(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match CDATASection_start(input) {
+        Ok(succ) => Ok((succ.0, ContentRelaxed::CdataStart)),
+        Err(err) => return Err(err),
+    }
+}
+
+fn content_relaxed_CommentStart(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
+    match Comment_start(input) {
+        Ok(succ) => Ok((succ.0, ContentRelaxed::CommentStart)),
+        Err(err) => return Err(err),
+    }
+}
+
+// [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | Reference | CDATA | Comment ... todo: add PI
 fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     alt((
         content_relaxed_CharData,
@@ -643,6 +659,8 @@ fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
         content_relaxed_EmptyElemTag,
         content_relaxed_ETag,
         content_relaxed_Reference,
+        content_relaxed_CdataStart,
+        content_relaxed_CommentStart,
     ))(input)
 }
 
@@ -878,6 +896,34 @@ fn test_comment() {
     );
 }
 
+enum InsideComment<'a> {
+    Characters(&'a [u8]),
+    CommentEnd,
+}
+
+fn insidecomment_characters(input: &[u8]) -> IResult<&[u8], InsideComment> {
+    match recognize(tuple((
+        inside_Comment_single,
+        many0_custom_chardata(inside_Comment_single),
+    )))(input)
+    {
+        Ok(succ) => Ok((succ.0, InsideComment::Characters(succ.1))),
+        Err(err) => return Err(err),
+    }
+}
+
+fn insidecomment_comment_end(input: &[u8]) -> IResult<&[u8], InsideComment> {
+    match Comment_end(input) {
+        Ok(succ) => Ok((succ.0, InsideComment::CommentEnd)),
+        Err(err) => return Err(err),
+    }
+}
+
+// [custom]
+fn insidecomment(input: &[u8]) -> IResult<&[u8], InsideComment> {
+    alt((insidecomment_characters, insidecomment_comment_end))(input)
+}
+
 // [18] CDSect ::= CDStart CData CDEnd
 
 // [19] CDStart ::= '<![CDATA['
@@ -937,13 +983,41 @@ fn test_cdata() {
     );
 }
 
+enum InsideCdata<'a> {
+    Characters(&'a [u8]),
+    CdataEnd,
+}
+
+fn insidecdata_characters(input: &[u8]) -> IResult<&[u8], InsideCdata> {
+    match recognize(tuple((
+        inside_CDATASection_single,
+        many0_custom_chardata(inside_CDATASection_single),
+    )))(input)
+    {
+        Ok(succ) => Ok((succ.0, InsideCdata::Characters(succ.1))),
+        Err(err) => return Err(err),
+    }
+}
+
+fn insidecdata_cdata_end(input: &[u8]) -> IResult<&[u8], InsideCdata> {
+    match CDATASection_end(input) {
+        Ok(succ) => Ok((succ.0, InsideCdata::CdataEnd)),
+        Err(err) => return Err(err),
+    }
+}
+
+// [custom]
+fn insidecdata(input: &[u8]) -> IResult<&[u8], InsideCdata> {
+    alt((insidecdata_characters, insidecdata_cdata_end))(input)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
     Content,
     DocStart,
     DocEnd,
-    //inside cdata ?
-    //inside comment ?
+    InsideCdata,
+    InsideComment,
 }
 
 pub struct OxideParser<R: Read> {
@@ -1057,111 +1131,178 @@ impl<R: Read> OxideParser<R> {
         //     attributes: vec![],
         // };
         // let mut event1: StartElement; //<'b>; //&'a
-        let mut event2: xml_sax::Event;
-
-        if self.state == ParserState::DocStart {
-            let res = docstart_custom(&self.buffer2);
-            match res {
-                Ok(parseresult) => {
-                    self.offset = self.buffer2.offset(parseresult.0);
-                    self.state = ParserState::Content;
-                    return xml_sax::Event::StartDocument;
+        let event2: xml_sax::Event;
+        match self.state {
+            ParserState::DocStart => {
+                let res = docstart_custom(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        self.state = ParserState::Content;
+                        return xml_sax::Event::StartDocument;
+                    }
+                    Err(err) => panic!(),
                 }
-                Err(err) => panic!(),
+            }
+            ParserState::Content => {
+                let res = content_relaxed(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+
+                        match parseresult.1 {
+                            ContentRelaxed::CharData(event1) => {
+                                let start = self.strbuffer.len();
+                                let size = event1.len();
+                                self.strbuffer
+                                    .push_str(unsafe { std::str::from_utf8_unchecked(event1) });
+
+                                event2 = xml_sax::Event::Characters(
+                                    &self.strbuffer[start..(start + size)],
+                                )
+                            }
+                            ContentRelaxed::StartElement(event1) => {
+                                //todo decode
+                                event2 = xml_sax::Event::StartElement(convert_start_element(
+                                    &mut self.strbuffer,
+                                    event1,
+                                ));
+                            }
+                            ContentRelaxed::EmptyElemTag(event1) => {
+                                //todo decode
+                                let mut start_elem =
+                                    convert_start_element(&mut self.strbuffer, event1);
+                                start_elem.is_empty = true;
+                                event2 = xml_sax::Event::StartElement(start_elem);
+                                //todo add endelement after this?
+                            }
+                            ContentRelaxed::EndElement(event1) => {
+                                let start = self.strbuffer.len();
+                                let size = event1.name.len();
+                                self.strbuffer.push_str(event1.name);
+
+                                event2 = xml_sax::Event::EndElement(xml_sax::EndElement {
+                                    name: &self.strbuffer[start..(start + size)],
+                                })
+                            }
+                            ContentRelaxed::Reference(event1) => {
+                                // let start = self.strbuffer.len();
+                                // let size = event1.initial.len();
+                                // let range_initial = Range {
+                                //     start: start,
+                                //     end: start + size,
+                                // };
+                                // self.strbuffer.push_str(event1.initial);
+
+                                let range: Range<usize> =
+                                    push_str_get_range(&mut self.strbuffer, event1.initial);
+
+                                let range_resolved = match event1.initial {
+                                    "&amp;" => push_str_get_range(&mut self.strbuffer, "&"),
+                                    "&lt" => push_str_get_range(&mut self.strbuffer, "<"),
+                                    "&gt;" => push_str_get_range(&mut self.strbuffer, ">"),
+                                    "&quot;" => push_str_get_range(&mut self.strbuffer, "\""),
+                                    "&apos;" => push_str_get_range(&mut self.strbuffer, "'"),
+                                    _ => push_str_get_range(&mut self.strbuffer, event1.initial),
+                                };
+
+                                //todo resolve char refs
+                                //we are ignoring DTD entity refs
+                                event2 = xml_sax::Event::Reference(xml_sax::Reference {
+                                    raw: &self.strbuffer[range],
+                                    resolved: &self.strbuffer[range_resolved],
+                                })
+                            }
+                            ContentRelaxed::CdataStart => {
+                                event2 = xml_sax::Event::StartCdata;
+                                self.state = ParserState::InsideCdata;
+                            }
+                            ContentRelaxed::CommentStart => {
+                                event2 = xml_sax::Event::StartComment;
+                                self.state = ParserState::InsideComment;
+                            }
+                        }
+                    }
+                    Err(Err::Incomplete(e)) => {
+                        // panic!()
+                        // self.read_data();
+                        // if read bytes are 0 then return eof, otherwise return dummy event
+                        if self.buffer2.len() == 0 {
+                            return xml_sax::Event::EndDocument;
+                        }
+                        println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
+                        println!("try to read: {:?}", unsafe {
+                            std::str::from_utf8_unchecked(&self.buffer2)
+                        });
+                        println!("err: {:?}", e);
+                        panic!()
+                    }
+                    Err(e) => {
+                        println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
+                        println!("try to read: {:?}", unsafe {
+                            std::str::from_utf8_unchecked(&self.buffer2)
+                        });
+                        println!("err: {:?}", e);
+
+                        panic!()
+                    }
+                }
+            }
+            ParserState::DocEnd => todo!(),
+            ParserState::InsideCdata => {
+                //expect cdata or cdata-end
+                let res = insidecdata(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        match parseresult.1 {
+                            InsideCdata::Characters(characters) => {
+                                let start = self.strbuffer.len();
+                                let size = characters.len();
+                                self.strbuffer
+                                    .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+
+                                event2 = xml_sax::Event::Characters(
+                                    &self.strbuffer[start..(start + size)],
+                                )
+                            }
+                            InsideCdata::CdataEnd => {
+                                self.state = ParserState::Content;
+                                event2 = xml_sax::Event::EndCdata;
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
+            }
+            ParserState::InsideComment => {
+                //expect comment or comment-end
+                let res = insidecomment(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        match parseresult.1 {
+                            InsideComment::Characters(characters) => {
+                                let start = self.strbuffer.len();
+                                let size = characters.len();
+                                self.strbuffer
+                                    .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+
+                                event2 = xml_sax::Event::Characters(
+                                    &self.strbuffer[start..(start + size)],
+                                )
+                            }
+                            InsideComment::CommentEnd => {
+                                self.state = ParserState::Content;
+                                event2 = xml_sax::Event::EndComment;
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
             }
         }
 
-        let res = content_relaxed(&self.buffer2);
-        match res {
-            Ok(parseresult) => {
-                self.offset = self.buffer2.offset(parseresult.0);
-
-                match parseresult.1 {
-                    ContentRelaxed::CharData(event1) => {
-                        let start = self.strbuffer.len();
-                        let size = event1.len();
-                        self.strbuffer
-                            .push_str(unsafe { std::str::from_utf8_unchecked(event1) });
-
-                        event2 = xml_sax::Event::Characters(&self.strbuffer[start..(start + size)])
-                    }
-                    ContentRelaxed::StartElement(event1) => {
-                        //todo decode
-                        event2 = xml_sax::Event::StartElement(convert_start_element(
-                            &mut self.strbuffer,
-                            event1,
-                        ));
-                    }
-                    ContentRelaxed::EmptyElemTag(event1) => {
-                        //todo decode
-                        let mut start_elem = convert_start_element(&mut self.strbuffer, event1);
-                        start_elem.is_empty = true;
-                        event2 = xml_sax::Event::StartElement(start_elem);
-                        //todo add endelement after this?
-                    }
-                    ContentRelaxed::EndElement(event1) => {
-                        let start = self.strbuffer.len();
-                        let size = event1.name.len();
-                        self.strbuffer.push_str(event1.name);
-
-                        event2 = xml_sax::Event::EndElement(xml_sax::EndElement {
-                            name: &self.strbuffer[start..(start + size)],
-                        })
-                    }
-                    ContentRelaxed::Reference(event1) => {
-                        // let start = self.strbuffer.len();
-                        // let size = event1.initial.len();
-                        // let range_initial = Range {
-                        //     start: start,
-                        //     end: start + size,
-                        // };
-                        // self.strbuffer.push_str(event1.initial);
-
-                        let range: Range<usize> =
-                            push_str_get_range(&mut self.strbuffer, event1.initial);
-
-                        let range_resolved = match event1.initial {
-                            "&amp;" => push_str_get_range(&mut self.strbuffer, "&"),
-                            "&lt" => push_str_get_range(&mut self.strbuffer, "<"),
-                            "&gt;" => push_str_get_range(&mut self.strbuffer, ">"),
-                            "&quot;" => push_str_get_range(&mut self.strbuffer, "\""),
-                            "&apos;" => push_str_get_range(&mut self.strbuffer, "'"),
-                            _ => push_str_get_range(&mut self.strbuffer, event1.initial),
-                        };
-
-                        //todo resolve char refs
-                        //we are ignoring DTD entity refs
-                        event2 = xml_sax::Event::Reference(xml_sax::Reference {
-                            raw: &self.strbuffer[range],
-                            resolved: &self.strbuffer[range_resolved],
-                        })
-                    }
-                }
-            }
-            Err(Err::Incomplete(e)) => {
-                // panic!()
-                // self.read_data();
-                // if read bytes are 0 then return eof, otherwise return dummy event
-                if self.buffer2.len() == 0 {
-                    return xml_sax::Event::EndDocument;
-                }
-                println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
-                println!("try to read: {:?}", unsafe {
-                    std::str::from_utf8_unchecked(&self.buffer2)
-                });
-                println!("err: {:?}", e);
-                panic!()
-            }
-            Err(e) => {
-                println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
-                println!("try to read: {:?}", unsafe {
-                    std::str::from_utf8_unchecked(&self.buffer2)
-                });
-                println!("err: {:?}", e);
-
-                panic!()
-            }
-        }
         event2
 
         // let res = STag(&self.buffer2);
@@ -1204,6 +1345,7 @@ fn test_parser1() {
             xml_sax::Event::EndElement(_) => todo!(),
             xml_sax::Event::Characters(c) => {}
             xml_sax::Event::Reference(c) => {}
+            _ => {}
         }
     }
 
