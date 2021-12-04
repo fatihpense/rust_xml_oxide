@@ -13,7 +13,7 @@ use nom::{
         is_digit, is_hex_digit,
         streaming::{alpha1, alphanumeric1, digit1, multispace0},
     },
-    combinator::{cut, map, opt, recognize, value},
+    combinator::{cut, map, map_res, opt, recognize, value},
     error::{
         context, convert_error, dbg_dmp, ContextError, Error, ErrorKind, ParseError, VerboseError,
     },
@@ -778,9 +778,9 @@ fn XMLDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
 // [27]   	Misc	   ::=   	Comment | PI | S
 //todo: comment | PI, we may need to separate
-fn Misc(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(alt((multispace1,)))(input)
-}
+// fn Misc(input: &[u8]) -> IResult<&[u8], &[u8]> {
+//     recognize(alt((multispace1,)))(input)
+// }
 
 fn docstart_custom(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((XMLDecl, multispace0)))(input)
@@ -983,6 +983,99 @@ fn test_cdata() {
     );
 }
 
+//only parsed without checking well-formedness inside
+// [16]   	PI	   ::=   	'<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+// [17]   	PITarget	   ::=   	Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+
+fn PI_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("<?")(input)
+}
+
+fn PI_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("?>")(input)
+}
+
+fn inside_PI_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    //if input = 0 , don't send incomplete
+    // ref#streamcut
+    if input.len() == 0 {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+
+    // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
+    match tag::<&str, &[u8], Error<&[u8]>>("?>")(input) {
+        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        _ => (),
+    };
+    inside_Comment_or_CDATA_single_pure(input)
+}
+
+fn PI(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        PI_start,
+        many0_custom_chardata(inside_PI_single),
+        PI_end,
+    )))(input)
+}
+
+#[test]
+fn test_pi() {
+    assert_eq!(PI("<??>a".as_bytes()), Ok((&b"a"[..], &b"<??>"[..])));
+
+    assert_eq!(
+        PI("<?dummmy?>".as_bytes()),
+        Ok((&b""[..], &b"<?dummmy?>"[..]))
+    );
+}
+
+//only parsed without checking well-formedness inside
+// [28]   	doctypedecl	   ::=   	'<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
+fn doctypedecl_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag("<!DOCTYPE")(input)
+}
+
+fn doctypedecl_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag(">")(input)
+}
+
+fn inside_doctypedecl_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    //if input = 0 , don't send incomplete
+    // ref#streamcut
+    if input.len() == 0 {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+
+    // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
+    match tag::<&str, &[u8], Error<&[u8]>>(">")(input) {
+        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        _ => (),
+    };
+    inside_Comment_or_CDATA_single_pure(input)
+}
+
+fn doctypedecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        doctypedecl_start,
+        many0_custom_chardata(inside_doctypedecl_single),
+        doctypedecl_end,
+    )))(input)
+}
+
+#[test]
+fn test_doctypedecl() {
+    assert_eq!(
+        doctypedecl(r#"<!DOCTYPE greeting SYSTEM "hello.dtd">a"#.as_bytes()),
+        Ok((&b"a"[..], &br#"<!DOCTYPE greeting SYSTEM "hello.dtd">"#[..]))
+    );
+
+    assert_eq!(
+        doctypedecl(r#"<!DOCTYPE dummy>"#.as_bytes()),
+        Ok((&b""[..], &br#"<!DOCTYPE dummy>"#[..]))
+    );
+}
+
 enum InsideCdata<'a> {
     Characters(&'a [u8]),
     CdataEnd,
@@ -1011,13 +1104,80 @@ fn insidecdata(input: &[u8]) -> IResult<&[u8], InsideCdata> {
     alt((insidecdata_characters, insidecdata_cdata_end))(input)
 }
 
+enum MiscBeforeXmlDecl<'a> {
+    PI(&'a [u8]),
+    Whitespace(&'a [u8]),
+    CommentStart,
+    DocType(&'a [u8]),
+    XmlDecl(&'a [u8]),
+}
+enum MiscBeforeDoctype<'a> {
+    PI(&'a [u8]),
+    Whitespace(&'a [u8]),
+    CommentStart,
+    DocType(&'a [u8]),
+}
+
+enum Misc<'a> {
+    PI(&'a [u8]),
+    Whitespace(&'a [u8]),
+    CommentStart,
+}
+// using map combinator...
+// fn misc_pi(input: &[u8]) -> IResult<&[u8], Misc> {
+//     map(PI, |a| Misc::PI(a))(input)
+//     // match recognize(tuple((
+//     //     inside_CDATASection_single,
+//     //     many0_custom_chardata(inside_CDATASection_single),
+//     // )))(input)
+//     // {
+//     //     Ok(succ) => Ok((succ.0, InsideCdata::Characters(succ.1))),
+//     //     Err(err) => return Err(err),
+//     // }
+// }
+
+// [custom]
+fn misc(input: &[u8]) -> IResult<&[u8], Misc> {
+    alt((
+        map(PI, |a| Misc::PI(a)),
+        map(multispace1, |a| Misc::Whitespace(a)),
+        map(Comment_start, |a| Misc::CommentStart),
+    ))(input)
+}
+fn misc_before_doctype(input: &[u8]) -> IResult<&[u8], MiscBeforeDoctype> {
+    alt((
+        map(PI, |a| MiscBeforeDoctype::PI(a)),
+        map(multispace1, |a| MiscBeforeDoctype::Whitespace(a)),
+        map(Comment_start, |a| MiscBeforeDoctype::CommentStart),
+        map(doctypedecl, |a| MiscBeforeDoctype::DocType(a)),
+    ))(input)
+}
+fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
+    alt((
+        map(XMLDecl, |a| MiscBeforeXmlDecl::XmlDecl(a)), // currently PI can also match XMLDecl so this is first choice
+        map(PI, |a| MiscBeforeXmlDecl::PI(a)),
+        map(multispace1, |a| MiscBeforeXmlDecl::Whitespace(a)),
+        map(Comment_start, |a| MiscBeforeXmlDecl::CommentStart),
+        map(doctypedecl, |a| MiscBeforeXmlDecl::DocType(a)),
+    ))(input)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
-    Content,
+    DocStartBeforeXmlDecl, // when xmldecl parsed move to DocStartBeforeDocType, if something else parsed(including whitespace) the same!
+    // DocStartBeforeXmlDeclInsideComment, // not possible - this means that doc doesn't have xmldecl, move to DocStartBeforeDocType
+    DocStartBeforeDocType,              //when doctype parsed move to docstart
+    DocStartBeforeDocTypeInsideComment, // this doesn't mean that doc doesn't have doctype, move to DocStartBeforeDocType
+
     DocStart,
-    DocEnd,
+    DocStartInsideComment,
+
+    Content,
     InsideCdata,
-    InsideComment,
+    InsideComment, //can be at the start or end of the document? specified all
+
+    DocEnd, //misc
+    DocEndInsideComment,
 }
 
 pub struct OxideParser<R: Read> {
@@ -1133,6 +1293,84 @@ impl<R: Read> OxideParser<R> {
         // let mut event1: StartElement; //<'b>; //&'a
         let event2: xml_sax::Event;
         match self.state {
+            ParserState::DocStartBeforeXmlDecl => {
+                let res = misc_before_xmldecl(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        self.state = ParserState::DocStartBeforeDocType;
+                        match parseresult.1 {
+                            MiscBeforeXmlDecl::XmlDecl(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 = xml_sax::Event::XmlDeclaration(&self.strbuffer[range])
+                            }
+                            MiscBeforeXmlDecl::PI(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 =
+                                    xml_sax::Event::ProcessingInstruction(&self.strbuffer[range])
+                            }
+                            MiscBeforeXmlDecl::Whitespace(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 = xml_sax::Event::Whitespace(&self.strbuffer[range])
+                            }
+                            MiscBeforeXmlDecl::CommentStart => {
+                                self.state = ParserState::DocStartBeforeDocTypeInsideComment;
+
+                                event2 = xml_sax::Event::StartComment;
+                            }
+                            MiscBeforeXmlDecl::DocType(a) => {
+                                self.state = ParserState::DocStart;
+
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 =
+                                    xml_sax::Event::DocumentTypeDeclaration(&self.strbuffer[range]);
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
+            }
+            ParserState::DocStartBeforeDocType => {
+                let res = misc_before_doctype(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        self.state = ParserState::DocStartBeforeDocType;
+                        match parseresult.1 {
+                            MiscBeforeDoctype::PI(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 =
+                                    xml_sax::Event::ProcessingInstruction(&self.strbuffer[range])
+                            }
+                            MiscBeforeDoctype::Whitespace(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 = xml_sax::Event::Whitespace(&self.strbuffer[range])
+                            }
+                            MiscBeforeDoctype::CommentStart => {
+                                self.state = ParserState::DocStartBeforeDocTypeInsideComment;
+
+                                event2 = xml_sax::Event::StartComment;
+                            }
+                            MiscBeforeDoctype::DocType(a) => {
+                                self.state = ParserState::DocStart;
+
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 =
+                                    xml_sax::Event::DocumentTypeDeclaration(&self.strbuffer[range]);
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
+            }
+            ParserState::DocStartBeforeDocTypeInsideComment => todo!(),
             ParserState::DocStart => {
                 let res = docstart_custom(&self.buffer2);
                 match res {
@@ -1141,8 +1379,14 @@ impl<R: Read> OxideParser<R> {
                         self.state = ParserState::Content;
                         return xml_sax::Event::StartDocument;
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        println!("{:?}", err);
+                        panic!()
+                    }
                 }
+            }
+            ParserState::DocStartInsideComment => {
+                return self.read_event();
             }
             ParserState::Content => {
                 let res = content_relaxed(&self.buffer2);
@@ -1214,7 +1458,7 @@ impl<R: Read> OxideParser<R> {
                                 })
                             }
                             ContentRelaxed::CdataStart => {
-                                event2 = xml_sax::Event::StartCdata;
+                                event2 = xml_sax::Event::StartCdataSection;
                                 self.state = ParserState::InsideCdata;
                             }
                             ContentRelaxed::CommentStart => {
@@ -1268,7 +1512,7 @@ impl<R: Read> OxideParser<R> {
                             }
                             InsideCdata::CdataEnd => {
                                 self.state = ParserState::Content;
-                                event2 = xml_sax::Event::EndCdata;
+                                event2 = xml_sax::Event::EndCdataSection;
                             }
                         }
                     }
@@ -1301,32 +1545,18 @@ impl<R: Read> OxideParser<R> {
                     Err(err) => panic!(),
                 }
             }
+
+            ParserState::DocEndInsideComment => todo!(),
         }
 
         event2
-
-        // let res = STag(&self.buffer2);
-        // match res {
-        //     Ok(parseresult) => {
-        //         self.offset = self.buffer2.offset(parseresult.0);
-        //         event = parseresult.1;
-        //         done = true
-        //     }
-        //     Err(Err::Incomplete(err)) => {
-        //         panic!();
-        //     }
-        //     Err(_) => {
-        //         done = true;
-        //         panic!();
-        //     }
-        // }
     }
 }
 
 #[test]
 fn test_parser1() {
     let data = r#"<root><A a='x'>
-    <B b="val" a:12='val2' ><C></root>"#
+    <B b="val" a:12='val2' ><C/></B></A></root>"#
         .as_bytes();
 
     // let mut buf = vec![];

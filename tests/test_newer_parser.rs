@@ -102,10 +102,10 @@ fn newer_parser_commentcdata() {
                     cdatas.push_str(",");
                 }
             }
-            xml_sax::Event::StartCdata => {
+            xml_sax::Event::StartCdataSection => {
                 inside_cdata = true;
             }
-            xml_sax::Event::EndCdata => {
+            xml_sax::Event::EndCdataSection => {
                 inside_cdata = false;
             }
 
