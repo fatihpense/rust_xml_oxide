@@ -241,6 +241,37 @@ where
     }
 }
 
+fn many1_custom<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
+where
+    I: Clone + InputLength,
+    F: Parser<I, O, E>,
+    E: ParseError<I>,
+{
+    move |mut i: I| match f.parse(i.clone()) {
+        Err(Err::Error(err)) => Err(Err::Error(E::append(i, ErrorKind::Many1, err))),
+        Err(e) => Err(e),
+        Ok((i1, o)) => {
+            i = i1;
+
+            loop {
+                let len = i.input_len();
+                match f.parse(i.clone()) {
+                    Err(Err::Error(_)) => return Ok((i, ())),
+                    Err(e) => return Err(e),
+                    Ok((i1, o)) => {
+                        // infinite loop check: the parser must always consume
+                        if i1.input_len() == len {
+                            return Err(Err::Error(E::from_error_kind(i, ErrorKind::Many1)));
+                        }
+
+                        i = i1;
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn name(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(pair(namestart_char, many0_custom_trycomplete(namechar)))(input)
 }
@@ -689,7 +720,7 @@ fn test_VersionNum() {
     let res = VersionNum(&data);
     println!("{:?}", res);
 }
-//  [24]   	VersionInfo	   ::=   	S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
+//  [24] VersionInfo ::= S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
 
 fn VersionInfo(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
@@ -709,7 +740,7 @@ fn test_VersionInfo() {
     println!("{:?}", res);
 }
 
-// [81]   	EncName	   ::=   	[A-Za-z] ([A-Za-z0-9._] | '-')*
+// [81] EncName ::= [A-Za-z] ([A-Za-z0-9._] | '-')*
 fn EncName(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
         alpha1,
@@ -723,7 +754,7 @@ fn test_EncName() {
     println!("{:?}", res);
 }
 
-// [80]   	EncodingDecl	   ::=   	S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
+// [80] EncodingDecl ::= S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
 fn EncodingDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
         multispace1,
@@ -776,7 +807,7 @@ fn XMLDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
     )))(input)
 }
 
-// [27]   	Misc	   ::=   	Comment | PI | S
+// [27] Misc ::= Comment | PI | S
 //todo: comment | PI, we may need to separate
 // fn Misc(input: &[u8]) -> IResult<&[u8], &[u8]> {
 //     recognize(alt((multispace1,)))(input)
@@ -794,7 +825,7 @@ fn test_XMLDecl() {
 }
 
 // [1] document ::= prolog element Misc*
-// [22]   	prolog	   ::=   	XMLDecl? Misc* (doctypedecl Misc*)?
+// [22] prolog ::= XMLDecl? Misc* (doctypedecl Misc*)?
 
 // [15] Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
 //spec seems to not allow empty comments? There are parsers that allow it.
@@ -984,8 +1015,8 @@ fn test_cdata() {
 }
 
 //only parsed without checking well-formedness inside
-// [16]   	PI	   ::=   	'<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
-// [17]   	PITarget	   ::=   	Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+// [16] PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+// [17] PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
 
 fn PI_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("<?")(input)
@@ -1030,7 +1061,7 @@ fn test_pi() {
 }
 
 //only parsed without checking well-formedness inside
-// [28]   	doctypedecl	   ::=   	'<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
+// [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
 fn doctypedecl_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("<!DOCTYPE")(input)
 }
@@ -1039,32 +1070,77 @@ fn doctypedecl_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
     tag(">")(input)
 }
 
-fn inside_doctypedecl_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    //if input = 0 , don't send incomplete
-    // ref#streamcut
+// fn inside_doctypedecl_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+//     //if input = 0 , don't send incomplete
+//     // ref#streamcut
+//     if input.len() == 0 {
+//         return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+//     }
+
+//     // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
+//     match tag::<&str, &[u8], Error<&[u8]>>(">")(input) {
+//         Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+//         Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+//         _ => (),
+//     };
+//     inside_Comment_or_CDATA_single_pure(input)
+// }
+
+//char that is not > or <
+fn inside_doctypedecl_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
     if input.len() == 0 {
-        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+        return Err(Err::Incomplete(Needed::new(1)));
+    }
+    let width = utf8_char_width(input[0]);
+
+    if input.len() < width {
+        return Err(Err::Incomplete(Needed::new(width - input.len())));
     }
 
-    // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
-    match tag::<&str, &[u8], Error<&[u8]>>(">")(input) {
-        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
-        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
-        _ => (),
+    let c = match std::str::from_utf8(&input[..width]).ok() {
+        Some(s) => s.chars().next().unwrap(),
+        None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
     };
-    inside_Comment_or_CDATA_single_pure(input)
+
+    if is_xml_char_t(c) && c != '<' && c != '>' {
+        return Ok((&input[width..], &input[0..width]));
+    } else {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
 }
 
+fn doctypedecl_dummy_internal(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(tuple((
+        tag("<"),
+        many0_custom_trycomplete(alt((
+            recognize(many1_custom(inside_doctypedecl_single_pure)),
+            Comment,
+            doctypedecl_dummy_internal,
+        ))),
+        tag(">"),
+    )))(input)
+}
+
+//  can contain nested < and > for attlist and internal comments
 fn doctypedecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
         doctypedecl_start,
-        many0_custom_chardata(inside_doctypedecl_single),
+        many0_custom_trycomplete(alt((
+            recognize(many1_custom(inside_doctypedecl_single_pure)),
+            Comment,
+            doctypedecl_dummy_internal,
+        ))),
         doctypedecl_end,
     )))(input)
 }
 
 #[test]
 fn test_doctypedecl() {
+    assert_eq!(
+        doctypedecl(r#"<!DOCTYPE>a"#.as_bytes()),
+        Ok((&b"a"[..], &br#"<!DOCTYPE>"#[..]))
+    );
+
     assert_eq!(
         doctypedecl(r#"<!DOCTYPE greeting SYSTEM "hello.dtd">a"#.as_bytes()),
         Ok((&b"a"[..], &br#"<!DOCTYPE greeting SYSTEM "hello.dtd">"#[..]))
@@ -1073,6 +1149,17 @@ fn test_doctypedecl() {
     assert_eq!(
         doctypedecl(r#"<!DOCTYPE dummy>"#.as_bytes()),
         Ok((&b""[..], &br#"<!DOCTYPE dummy>"#[..]))
+    );
+
+    assert_eq!(
+        doctypedecl(r#"<!DOCTYPE <!-- --> <[]>dummy>"#.as_bytes()),
+        Ok((&b""[..], &br#"<!DOCTYPE <!-- --> <[]>dummy>"#[..]))
+    );
+
+    //also works > inside comment
+    assert_eq!(
+        doctypedecl(r#"<!DOCTYPE <!-- > --> <[]>dummy>"#.as_bytes()),
+        Ok((&b""[..], &br#"<!DOCTYPE <!-- > --> <[]>dummy>"#[..]))
     );
 }
 
@@ -1162,6 +1249,20 @@ fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
     ))(input)
 }
 
+// Namespaces in XML 1.0 https://www.w3.org/TR/xml-names/
+
+// [1] NSAttName ::= PrefixedAttName | DefaultAttName
+// [2] PrefixedAttName ::= 'xmlns:'
+// [3] DefaultAttName ::= 'xmlns'
+// [4] NCName ::= Name - (Char* ':' Char*)	/* An XML Name, minus the ":" */
+// [5] NCNameChar ::= NameChar - ':' /* An XML NameChar, minus the ":" */
+// [6] NCNameStartChar ::= NCName - ( Char Char Char* ) /* The first letter of an NCName */
+// [7] QName ::= PrefixedName | UnprefixedName
+// [8] PrefixedName ::= Prefix ':' LocalPart
+// [9] UnprefixedName ::= LocalPart
+// [10] Prefix ::= NCName
+// [11] LocalPart ::= NCName
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
     DocStartBeforeXmlDecl, // when xmldecl parsed move to DocStartBeforeDocType, if something else parsed(including whitespace) the same!
@@ -1180,12 +1281,25 @@ enum ParserState {
     DocEndInsideComment,
 }
 
+struct Namespace {
+    level: usize,
+    prefix: Range<usize>,
+    value: Range<usize>,
+}
 pub struct OxideParser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
     buffer2: Vec<u8>,
     strbuffer: String,
     offset: usize,
+
+    element_level: usize,
+    element_strbuffer: String,
+    element_list: Vec<Range<usize>>,
+
+    is_namespace_aware: bool,
+    namespace_strbuffer: String,
+    namespace_list: Vec<Namespace>,
 }
 
 fn convert_start_element<'a>(
@@ -1263,6 +1377,14 @@ impl<R: Read> OxideParser<R> {
             offset: 0,
             buffer2: vec![],
             strbuffer: String::new(),
+
+            element_level: 0,
+            element_list: vec![],
+            element_strbuffer: String::new(),
+
+            is_namespace_aware: true,
+            namespace_list: vec![],
+            namespace_strbuffer: String::new(),
         }
     }
 
