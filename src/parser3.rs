@@ -651,7 +651,7 @@ fn content_relaxed_ETag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
 //todo add endelement as next step or inform it is an emptyelem tag via event api?
 fn content_relaxed_EmptyElemTag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     match EmptyElemTag(input) {
-        Ok(succ) => Ok((succ.0, ContentRelaxed::StartElement(succ.1))),
+        Ok(succ) => Ok((succ.0, ContentRelaxed::EmptyElemTag(succ.1))),
         Err(err) => return Err(err),
     }
 }
@@ -1265,6 +1265,7 @@ fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
+    Initial,
     DocStartBeforeXmlDecl, // when xmldecl parsed move to DocStartBeforeDocType, if something else parsed(including whitespace) the same!
     // DocStartBeforeXmlDeclInsideComment, // not possible - this means that doc doesn't have xmldecl, move to DocStartBeforeDocType
     DocStartBeforeDocType,              //when doctype parsed move to docstart
@@ -1293,6 +1294,7 @@ pub struct OxideParser<R: Read> {
     strbuffer: String,
     offset: usize,
 
+    // document_complete: bool, //if element_level reaches 0 again , we control this via state
     element_level: usize,
     element_strbuffer: String,
     element_list: Vec<Range<usize>>,
@@ -1415,6 +1417,10 @@ impl<R: Read> OxideParser<R> {
         // let mut event1: StartElement; //<'b>; //&'a
         let event2: xml_sax::Event;
         match self.state {
+            ParserState::Initial => {
+                self.state = ParserState::DocStartBeforeXmlDecl;
+                return xml_sax::Event::StartDocument;
+            }
             ParserState::DocStartBeforeXmlDecl => {
                 let res = misc_before_xmldecl(&self.buffer2);
                 match res {
@@ -1601,10 +1607,21 @@ impl<R: Read> OxideParser<R> {
                             }
                             ContentRelaxed::StartElement(event1) => {
                                 //todo decode
-                                event2 = xml_sax::Event::StartElement(convert_start_element(
-                                    &mut self.strbuffer,
-                                    event1,
-                                ));
+
+                                let start_element =
+                                    convert_start_element(&mut self.strbuffer, event1);
+                                self.element_level += 1;
+
+                                //add element to list for expected tags check
+
+                                let range = push_str_get_range(
+                                    &mut self.element_strbuffer,
+                                    start_element.name,
+                                );
+                                self.element_list.push(range);
+                                //todo: add namespaces
+
+                                event2 = xml_sax::Event::StartElement(start_element);
                             }
                             ContentRelaxed::EmptyElemTag(event1) => {
                                 //todo decode
@@ -1612,16 +1629,50 @@ impl<R: Read> OxideParser<R> {
                                     convert_start_element(&mut self.strbuffer, event1);
                                 start_elem.is_empty = true;
                                 event2 = xml_sax::Event::StartElement(start_elem);
-                                //todo add endelement after this?
+
+                                //todo: add & clear up namespaces
+
+                                //add endelement after this? no..?
                             }
                             ContentRelaxed::EndElement(event1) => {
+                                //todo: check if it is the expected tag
+
+                                match self.element_list.pop() {
+                                    Some(r) => {
+                                        if &self.element_strbuffer[r.clone()] == event1.name {
+                                            self.element_strbuffer.truncate(r.start);
+                                        } else {
+                                            panic!(
+                                                "Expected closing tag: {} ,found: {}",
+                                                &self.element_strbuffer[r.clone()],
+                                                event1.name
+                                            );
+                                            // TODO Expected closing tag: ... &self.element_strbuffer[r.clone()] found event1.name
+                                        }
+                                    }
+                                    None => {
+                                        panic!()
+                                    }
+                                }
+                                // let range = push_str_get_range(
+                                //     &mut self.element_strbuffer,
+                                //     start_element.name,
+                                // );
+                                // self.element_list.push(range);
+
                                 let start = self.strbuffer.len();
                                 let size = event1.name.len();
                                 self.strbuffer.push_str(event1.name);
 
                                 event2 = xml_sax::Event::EndElement(xml_sax::EndElement {
                                     name: &self.strbuffer[start..(start + size)],
-                                })
+                                });
+
+                                self.element_level -= 1;
+                                if self.element_level == 0 {
+                                    self.state = ParserState::DocEnd;
+                                }
+                                //todo: clear up namespaces
                             }
                             ContentRelaxed::Reference(event1) => {
                                 // let start = self.strbuffer.len();
@@ -1805,7 +1856,7 @@ impl<R: Read> OxideParser<R> {
 #[test]
 fn test_parser1() {
     let data = r#"<root><A a='x'>
-    <B b="val" a:12='val2' ><C/></B></A></root>"#
+    <B b="val" a:12='val2' ><C/></B> </A> </root>"#
         .as_bytes();
 
     // let mut buf = vec![];
@@ -1814,14 +1865,12 @@ fn test_parser1() {
         let res = p.read_event();
         println!("{:?}", res);
         match res {
-            xml_sax::Event::StartDocument => todo!(),
-            xml_sax::Event::EndDocument => todo!(),
-            xml_sax::Event::StartElement(el) => {
-                if el.name == "C" {
-                    break;
-                }
+            xml_sax::Event::StartDocument => {}
+            xml_sax::Event::EndDocument => {
+                break;
             }
-            xml_sax::Event::EndElement(_) => todo!(),
+            xml_sax::Event::StartElement(el) => {}
+            xml_sax::Event::EndElement(_) => {}
             xml_sax::Event::Characters(c) => {}
             xml_sax::Event::Reference(c) => {}
             _ => {}
