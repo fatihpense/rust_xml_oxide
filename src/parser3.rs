@@ -1391,9 +1391,8 @@ impl<R: Read> OxideParser<R> {
                                 self.strbuffer
                                     .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                                event2 = xml_sax::Event::Characters(
-                                    &self.strbuffer[start..(start + size)],
-                                )
+                                event2 =
+                                    xml_sax::Event::Comment(&self.strbuffer[start..(start + size)])
                             }
                             InsideComment::CommentEnd => {
                                 self.state = ParserState::DocStartBeforeDocType;
@@ -1449,9 +1448,8 @@ impl<R: Read> OxideParser<R> {
                                 self.strbuffer
                                     .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                                event2 = xml_sax::Event::Characters(
-                                    &self.strbuffer[start..(start + size)],
-                                )
+                                event2 =
+                                    xml_sax::Event::Comment(&self.strbuffer[start..(start + size)])
                             }
                             InsideComment::CommentEnd => {
                                 self.state = ParserState::DocStart;
@@ -1580,9 +1578,8 @@ impl<R: Read> OxideParser<R> {
                                 self.strbuffer
                                     .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                                event2 = xml_sax::Event::Characters(
-                                    &self.strbuffer[start..(start + size)],
-                                )
+                                event2 =
+                                    xml_sax::Event::Cdata(&self.strbuffer[start..(start + size)])
                             }
                             InsideCdata::CdataEnd => {
                                 self.state = ParserState::Content;
@@ -1606,9 +1603,8 @@ impl<R: Read> OxideParser<R> {
                                 self.strbuffer
                                     .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                                event2 = xml_sax::Event::Characters(
-                                    &self.strbuffer[start..(start + size)],
-                                )
+                                event2 =
+                                    xml_sax::Event::Comment(&self.strbuffer[start..(start + size)])
                             }
                             InsideComment::CommentEnd => {
                                 self.state = ParserState::Content;
@@ -1666,9 +1662,8 @@ impl<R: Read> OxideParser<R> {
                                 self.strbuffer
                                     .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                                event2 = xml_sax::Event::Characters(
-                                    &self.strbuffer[start..(start + size)],
-                                )
+                                event2 =
+                                    xml_sax::Event::Comment(&self.strbuffer[start..(start + size)])
                             }
                             InsideComment::CommentEnd => {
                                 self.state = ParserState::DocEnd;
