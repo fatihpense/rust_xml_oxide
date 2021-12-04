@@ -1258,7 +1258,7 @@ impl<R: Read> OxideParser<R> {
 
     pub fn start(reader: R) -> OxideParser<R> {
         OxideParser {
-            state: ParserState::DocStart,
+            state: ParserState::DocStartBeforeXmlDecl,
             bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
             buffer2: vec![],
@@ -1331,7 +1331,11 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        //try content!
+                        self.state = ParserState::Content;
+                        event2 = self.read_event();
+                    }
                 }
             }
             ParserState::DocStartBeforeDocType => {
@@ -1339,7 +1343,7 @@ impl<R: Read> OxideParser<R> {
                 match res {
                     Ok(parseresult) => {
                         self.offset = self.buffer2.offset(parseresult.0);
-                        self.state = ParserState::DocStartBeforeDocType;
+                        // self.state = ParserState::DocStartBeforeDocType;
                         match parseresult.1 {
                             MiscBeforeDoctype::PI(a) => {
                                 let str = unsafe { std::str::from_utf8_unchecked(a) };
@@ -1367,26 +1371,96 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        //try content!
+                        self.state = ParserState::Content;
+                        event2 = self.read_event();
+                    }
                 }
             }
-            ParserState::DocStartBeforeDocTypeInsideComment => todo!(),
-            ParserState::DocStart => {
-                let res = docstart_custom(&self.buffer2);
+            ParserState::DocStartBeforeDocTypeInsideComment => {
+                //expect comment or comment-end
+                let res = insidecomment(&self.buffer2);
                 match res {
                     Ok(parseresult) => {
                         self.offset = self.buffer2.offset(parseresult.0);
-                        self.state = ParserState::Content;
-                        return xml_sax::Event::StartDocument;
+                        match parseresult.1 {
+                            InsideComment::Characters(characters) => {
+                                let start = self.strbuffer.len();
+                                let size = characters.len();
+                                self.strbuffer
+                                    .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+
+                                event2 = xml_sax::Event::Characters(
+                                    &self.strbuffer[start..(start + size)],
+                                )
+                            }
+                            InsideComment::CommentEnd => {
+                                self.state = ParserState::DocStartBeforeDocType;
+                                event2 = xml_sax::Event::EndComment;
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
+            }
+            ParserState::DocStart => {
+                let res = misc(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        // self.state = ParserState::DocStartBeforeDocType;
+                        match parseresult.1 {
+                            Misc::PI(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 =
+                                    xml_sax::Event::ProcessingInstruction(&self.strbuffer[range])
+                            }
+                            Misc::Whitespace(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 = xml_sax::Event::Whitespace(&self.strbuffer[range])
+                            }
+                            Misc::CommentStart => {
+                                self.state = ParserState::DocStartInsideComment;
+
+                                event2 = xml_sax::Event::StartComment;
+                            }
+                        }
                     }
                     Err(err) => {
-                        println!("{:?}", err);
-                        panic!()
+                        //try content!
+                        self.state = ParserState::Content;
+                        event2 = self.read_event();
                     }
                 }
             }
             ParserState::DocStartInsideComment => {
-                return self.read_event();
+                //expect comment or comment-end
+                let res = insidecomment(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        match parseresult.1 {
+                            InsideComment::Characters(characters) => {
+                                let start = self.strbuffer.len();
+                                let size = characters.len();
+                                self.strbuffer
+                                    .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+
+                                event2 = xml_sax::Event::Characters(
+                                    &self.strbuffer[start..(start + size)],
+                                )
+                            }
+                            InsideComment::CommentEnd => {
+                                self.state = ParserState::DocStart;
+                                event2 = xml_sax::Event::EndComment;
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
             }
             ParserState::Content => {
                 let res = content_relaxed(&self.buffer2);
@@ -1492,7 +1566,7 @@ impl<R: Read> OxideParser<R> {
                     }
                 }
             }
-            ParserState::DocEnd => todo!(),
+
             ParserState::InsideCdata => {
                 //expect cdata or cdata-end
                 let res = insidecdata(&self.buffer2);
@@ -1545,8 +1619,66 @@ impl<R: Read> OxideParser<R> {
                     Err(err) => panic!(),
                 }
             }
+            ParserState::DocEnd => {
+                // EOF
+                if self.buffer2.len() == 0 {
+                    return xml_sax::Event::EndDocument;
+                }
 
-            ParserState::DocEndInsideComment => todo!(),
+                let res = misc(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        match parseresult.1 {
+                            Misc::PI(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 =
+                                    xml_sax::Event::ProcessingInstruction(&self.strbuffer[range])
+                            }
+                            Misc::Whitespace(a) => {
+                                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                                let range = push_str_get_range(&mut self.strbuffer, &str);
+                                event2 = xml_sax::Event::Whitespace(&self.strbuffer[range])
+                            }
+                            Misc::CommentStart => {
+                                self.state = ParserState::DocEndInsideComment;
+
+                                event2 = xml_sax::Event::StartComment;
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        panic!()
+                    }
+                }
+            }
+            ParserState::DocEndInsideComment => {
+                //expect comment or comment-end
+                let res = insidecomment(&self.buffer2);
+                match res {
+                    Ok(parseresult) => {
+                        self.offset = self.buffer2.offset(parseresult.0);
+                        match parseresult.1 {
+                            InsideComment::Characters(characters) => {
+                                let start = self.strbuffer.len();
+                                let size = characters.len();
+                                self.strbuffer
+                                    .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+
+                                event2 = xml_sax::Event::Characters(
+                                    &self.strbuffer[start..(start + size)],
+                                )
+                            }
+                            InsideComment::CommentEnd => {
+                                self.state = ParserState::DocEnd;
+                                event2 = xml_sax::Event::EndComment;
+                            }
+                        }
+                    }
+                    Err(err) => panic!(),
+                }
+            }
         }
 
         event2
