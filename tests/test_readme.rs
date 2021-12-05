@@ -1,33 +1,7 @@
-# xml_oxide
-
-[![crates.io](https://img.shields.io/crates/v/xml_oxide.svg)](https://crates.io/crates/xml_oxide) [![github](https://img.shields.io/badge/github-fatihpense%2Frust__xml__oxide-FFF8C2)](https://github.com/fatihpense/rust_xml_oxide) [![Released API docs](https://img.shields.io/badge/docs.rs-xml__oxide-CFF3CA)](https://docs.rs/xml_oxide)
-
-Rust XML parser implementation that parses any well-formed XML defined in the [W3C Spec](https://www.w3.org/TR/xml/) in a streaming way.
-
-## Features
-
-- It uses constant-like memory for large XML files
-- It only supports UTF-8 encoding
-- It is a non-validating parser
-- It ignores well-formedness in Processing Instructions(DTD), DOCTYPE and parses them as raw strings
-- It can parse not-well-formed documents (please report as a bug)
-- Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
-- If you have an element tag or DOCTYPE declaration that is bigger than buffer size(currently default 8KB), it can fail
-
-## Example Usage
-
-In this example [StartElement](sax::StartElement) and [EndElement](sax::EndElement) events are counted. Note that you can find more examples under `tests` directory.
-
-- `StartElement` also include empty tags. Checked by `is_empty`.
-- [Reference](sax::Reference) entities like `&amp;` or `&#60;` comes in its own event(Not in `Characters`).
-- Character/numerical and predefined entity references are resolved. Custom entity definitions are passed as raw.
-- Check [sax::Event](sax::Event) to see all available event types
-
-```rust
 use std::fs::File;
 use xml_oxide::{parser::Parser, sax::Event};
 
-
+#[test]
 fn main() {
     println!("Starting...");
 
@@ -82,6 +56,3 @@ fn main() {
     let elapsed = now.elapsed();
     println!("Time elapsed: {:.2?}", elapsed);
 }
-
-
-```
