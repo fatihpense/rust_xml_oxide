@@ -39,7 +39,7 @@ struct Namespace {
     prefix: Range<usize>,
     value: Range<usize>,
 }
-pub struct OxideParser<R: Read> {
+pub struct Parser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
     buffer2: Vec<u8>,
@@ -142,12 +142,12 @@ fn push_ns_values_get_ns(
     }
 }
 
-pub type SaxResult<T> = Result<T, error::SaxError>;
+pub type SaxResult<T> = Result<T, error::Error>;
 
 mod error {
     use thiserror::Error;
     #[derive(Debug, Error)]
-    pub enum SaxError {
+    pub enum Error {
         #[error(transparent)]
         Io(#[from] std::io::Error),
 
@@ -157,9 +157,9 @@ mod error {
     }
 }
 
-impl<R: Read> OxideParser<R> {
-    pub fn start(reader: R) -> OxideParser<R> {
-        OxideParser {
+impl<R: Read> Parser<R> {
+    pub fn start(reader: R) -> Parser<R> {
+        Parser {
             state: ParserState::Initial,
             bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
@@ -323,7 +323,7 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(_err) => {
-                        return Err(error::SaxError::Parsing(
+                        return Err(error::Error::Parsing(
                             "Expected Comment content or Comment end".to_owned(),
                         ))
                     }
@@ -384,7 +384,7 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(_err) => {
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Expecting comment content or comment closing tag "
                         )))
                     }
@@ -484,7 +484,7 @@ impl<R: Read> OxideParser<R> {
                                                 // attr.local_name = &self.strbuffer[range_local_name];
                                             }
                                             Err(_e) => {
-                                                return Err(error::SaxError::Parsing(format!(
+                                                return Err(error::Error::Parsing(format!(
                                                     "Attribute does not conform to QName spec: {}",
                                                     attr.name
                                                 )))
@@ -506,7 +506,7 @@ impl<R: Read> OxideParser<R> {
                                                     &self.namespace_strbuffer[ns.value.clone()]
                                             }
                                             None => {
-                                                return Err(error::SaxError::Parsing(format!(
+                                                return Err(error::Error::Parsing(format!(
                                                     "Namespace not found for prefix: {} , attribute: {} , element: {}", attr.prefix, attr.name, start_element.name
                                                 )))
                                             }
@@ -534,13 +534,13 @@ impl<R: Read> OxideParser<R> {
                                                     if start_element.prefix == "" {
                                                         //it is fine
                                                     } else {
-                                                        return Err(error::SaxError::Parsing(format!("Namespace prefix not found for element: {}",start_element.name)));
+                                                        return Err(error::Error::Parsing(format!("Namespace prefix not found for element: {}",start_element.name)));
                                                     }
                                                 }
                                             }
                                         }
                                         Err(_e) => {
-                                            return Err(error::SaxError::Parsing(format!(
+                                            return Err(error::Error::Parsing(format!(
                                                 "Element name does not conform to QName spec: {}",
                                                 start_element.name
                                             )))
@@ -619,7 +619,7 @@ impl<R: Read> OxideParser<R> {
                                                 // attr.local_name = &self.strbuffer[range_local_name];
                                             }
                                             Err(_e) => {
-                                                return Err(error::SaxError::Parsing(format!(
+                                                return Err(error::Error::Parsing(format!(
                                                     "Attribute does not conform to QName spec: {}",
                                                     attr.name
                                                 )))
@@ -641,7 +641,7 @@ impl<R: Read> OxideParser<R> {
                                                     &self.namespace_strbuffer[ns.value.clone()]
                                             }
                                             None => {
-                                                return Err(error::SaxError::Parsing(format!(
+                                                return Err(error::Error::Parsing(format!(
                                                     "Namespace not found for prefix: {} , attribute: {} , element: {}",
                                                     attr.prefix, attr.name,start_element.name
                                                 )));
@@ -670,7 +670,7 @@ impl<R: Read> OxideParser<R> {
                                                     if start_element.prefix == "" {
                                                         //it is fine
                                                     } else {
-                                                        return Err(error::SaxError::Parsing(format!(
+                                                        return Err(error::Error::Parsing(format!(
                                                             "Namespace not found for Element prefix. element: {}",
                                                             start_element.name
                                                         )));
@@ -679,7 +679,7 @@ impl<R: Read> OxideParser<R> {
                                             }
                                         }
                                         Err(_e) => {
-                                            return Err(error::SaxError::Parsing(format!(
+                                            return Err(error::Error::Parsing(format!(
                                                 "Element name does not conform to QName spec: {}",
                                                 start_element.name
                                             )));
@@ -705,7 +705,7 @@ impl<R: Read> OxideParser<R> {
                                         if &self.element_strbuffer[r.clone()] == event1.name {
                                             self.element_strbuffer.truncate(r.start);
                                         } else {
-                                            return Err(error::SaxError::Parsing(format!(
+                                            return Err(error::Error::Parsing(format!(
                                                 "Expected closing tag: {} ,found: {}",
                                                 &self.element_strbuffer[r.clone()],
                                                 event1.name
@@ -715,7 +715,7 @@ impl<R: Read> OxideParser<R> {
                                         }
                                     }
                                     None => {
-                                        return Err(error::SaxError::Parsing(format!(
+                                        return Err(error::Error::Parsing(format!(
                                             "No starting tag for: {}",
                                             event1.name
                                         )))
@@ -785,7 +785,7 @@ impl<R: Read> OxideParser<R> {
                                                     if end_element.prefix == "" {
                                                         //it is fine
                                                     } else {
-                                                        return Err(error::SaxError::Parsing(format!(
+                                                        return Err(error::Error::Parsing(format!(
                                                             "Namespace prefix not found for element: {}",
                                                             end_element.name
                                                         )));
@@ -794,7 +794,7 @@ impl<R: Read> OxideParser<R> {
                                             }
                                         }
                                         Err(_e) => {
-                                            return Err(error::SaxError::Parsing(format!(
+                                            return Err(error::Error::Parsing(format!(
                                                 "Element name does not conform to QName spec: {}",
                                                 end_element.name
                                             )))
@@ -892,7 +892,7 @@ impl<R: Read> OxideParser<R> {
                     Err(nom::Err::Incomplete(_e)) => {
                         let ending = String::from_utf8_lossy(&self.buffer2);
 
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Incomplete file / Premature end-of-file: {}",
                             ending
                         )));
@@ -904,7 +904,7 @@ impl<R: Read> OxideParser<R> {
                             Some((idx, _)) => &ending[..idx],
                         };
 
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Expected one of (CharData | element | Reference | CDSect | PI | Comment), found: {}",
                             ending_truncated
                         )));
@@ -935,7 +935,7 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(_err) => {
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Expecting CDATA content or CDATA closing tag "
                         )))
                     }
@@ -964,7 +964,7 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(_err) => {
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Expecting comment content or comment closing tag "
                         )))
                     }
@@ -1000,7 +1000,7 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(_err) => {
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Unexpected entity/content at the end of the document."
                         )))
                     }
@@ -1029,7 +1029,7 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(_err) => {
-                        return Err(error::SaxError::Parsing(format!(
+                        return Err(error::Error::Parsing(format!(
                             "Expecting comment content or comment closing tag "
                         )))
                     }
@@ -1048,7 +1048,7 @@ fn test_parser1() {
         .as_bytes();
 
     // let mut buf = vec![];
-    let mut p = OxideParser::start(data);
+    let mut p = Parser::start(data);
     loop {
         let res = p.read_event();
         println!("{:?}", res);
