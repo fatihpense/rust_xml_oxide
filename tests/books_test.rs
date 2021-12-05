@@ -21,43 +21,53 @@ fn books_attributes() {
         let res = p.read_event();
 
         match res {
-            Event::StartElement(el) => {
-                for attr in el.attributes.iter() {
-                    //println!("{}->{}", attr.get_qualified_name(), attr.get_value());
-                    attributes_string.push_str(attr.name);
-                    attributes_string.push_str("->");
-                    attributes_string.push_str(attr.value);
-                    attributes_string.push_str(",");
+            Ok(event) => {
+                match event {
+                    Event::StartElement(el) => {
+                        for attr in el.attributes.iter() {
+                            //println!("{}->{}", attr.get_qualified_name(), attr.get_value());
+                            attributes_string.push_str(attr.name);
+                            attributes_string.push_str("->");
+                            attributes_string.push_str(attr.value);
+                            attributes_string.push_str(",");
 
-                    // if el.name == "fp:book" {
-                    if el.local_name == "book" && el.namespace == "http://github.com/fatihpense" {
-                        book_element_attributes.push_str("qname");
-                        book_element_attributes.push_str("->");
-                        book_element_attributes.push_str(attr.name);
-                        book_element_attributes.push_str(", ");
+                            // if el.name == "fp:book" {
+                            if el.local_name == "book"
+                                && el.namespace == "http://github.com/fatihpense"
+                            {
+                                book_element_attributes.push_str("qname");
+                                book_element_attributes.push_str("->");
+                                book_element_attributes.push_str(attr.name);
+                                book_element_attributes.push_str(", ");
 
-                        book_element_attributes.push_str("uri");
-                        book_element_attributes.push_str("->");
-                        book_element_attributes.push_str(attr.namespace);
-                        book_element_attributes.push_str(", ");
+                                book_element_attributes.push_str("uri");
+                                book_element_attributes.push_str("->");
+                                book_element_attributes.push_str(attr.namespace);
+                                book_element_attributes.push_str(", ");
 
-                        book_element_attributes.push_str("lname");
-                        book_element_attributes.push_str("->");
-                        book_element_attributes.push_str(attr.local_name);
-                        book_element_attributes.push_str(", ");
+                                book_element_attributes.push_str("lname");
+                                book_element_attributes.push_str("->");
+                                book_element_attributes.push_str(attr.local_name);
+                                book_element_attributes.push_str(", ");
 
-                        book_element_attributes.push_str("value");
-                        book_element_attributes.push_str("->");
-                        book_element_attributes.push_str(attr.value);
-                        book_element_attributes.push_str(". ");
+                                book_element_attributes.push_str("value");
+                                book_element_attributes.push_str("->");
+                                book_element_attributes.push_str(attr.value);
+                                book_element_attributes.push_str(". ");
+                            }
+                        }
                     }
+                    Event::EndDocument => {
+                        break;
+                    }
+
+                    _ => {}
                 }
             }
-            Event::EndDocument => {
+            Err(err) => {
+                println!("{}", err);
                 break;
             }
-
-            _ => {}
         }
     }
 

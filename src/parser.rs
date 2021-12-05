@@ -1547,9 +1547,21 @@ fn push_ns_values_get_ns(
 }
 
 impl<R: Read> OxideParser<R> {
-    // This method "consumes" the resources of the caller object
-    // `self` desugars to `self: Self`
+use thiserror::Error;
 
+pub type SaxResult<T> = Result<T, SaxError>;
+
+#[derive(Debug, Error)]
+pub enum SaxError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    // Generic
+    #[error("SAX Parsing Err: {0}")]
+    Parsing(String),
+}
+
+impl<R: Read> OxideParser<R> {
     pub fn start(reader: R) -> OxideParser<R> {
         OxideParser {
             state: ParserState::Initial,
@@ -1578,7 +1590,7 @@ impl<R: Read> OxideParser<R> {
     }
 
     // , buf: &'b [u8]
-    pub fn read_event<'a, 'b, 'c>(&'a mut self) -> xml_sax::Event<'a> {
+    pub fn read_event<'a, 'b, 'c>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
         // self.bufreader.consume(self.offset);
         self.buffer2.drain(0..self.offset);
         self.offset = 0;
@@ -1597,7 +1609,7 @@ impl<R: Read> OxideParser<R> {
         match self.state {
             ParserState::Initial => {
                 self.state = ParserState::DocStartBeforeXmlDecl;
-                return xml_sax::Event::StartDocument;
+                return Ok(xml_sax::Event::StartDocument);
             }
             ParserState::DocStartBeforeXmlDecl => {
                 let res = misc_before_xmldecl(&self.buffer2);
@@ -1640,7 +1652,7 @@ impl<R: Read> OxideParser<R> {
                     Err(err) => {
                         //try content!
                         self.state = ParserState::Content;
-                        event2 = self.read_event();
+                        return self.read_event();
                     }
                 }
             }
@@ -1680,7 +1692,7 @@ impl<R: Read> OxideParser<R> {
                     Err(err) => {
                         //try content!
                         self.state = ParserState::Content;
-                        event2 = self.read_event();
+                        return self.read_event();
                     }
                 }
             }
@@ -1706,7 +1718,11 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        return Err(SaxError::Parsing(
+                            "Expected Comment content or Comment end".to_owned(),
+                        ))
+                    }
                 }
             }
             ParserState::DocStart => {
@@ -1737,7 +1753,7 @@ impl<R: Read> OxideParser<R> {
                     Err(err) => {
                         //try content!
                         self.state = ParserState::Content;
-                        event2 = self.read_event();
+                        return self.read_event();
                     }
                 }
             }
@@ -1820,7 +1836,7 @@ impl<R: Read> OxideParser<R> {
                                     start_element.name,
                                 );
                                 self.element_list.push(range);
-                                //todo: add namespaces
+                                // add namespaces
                                 if self.is_namespace_aware {
                                     //first process namespace definitions
                                     for attr in start_element.attributes.iter_mut() {
@@ -1867,7 +1883,7 @@ impl<R: Read> OxideParser<R> {
 
                                     for attr in start_element.attributes.iter_mut() {
                                         //Default namespace doesn't apply to attributes
-                                        if attr.prefix == "" {
+                                        if attr.prefix == "" || attr.prefix == "xmlns" {
                                             continue;
                                         }
                                         match self.namespace_list.iter().rfind(|ns| {
@@ -1879,7 +1895,10 @@ impl<R: Read> OxideParser<R> {
                                                     &self.namespace_strbuffer[ns.value.clone()]
                                             }
                                             None => {
-                                                panic!("Namespace prefix not found")
+                                                return Err(SaxError::Parsing(format!(
+                                                    "Namespace prefix not found: {} , element: {}",
+                                                    attr.prefix, start_element.name
+                                                )))
                                             }
                                         }
                                     }
@@ -1905,7 +1924,7 @@ impl<R: Read> OxideParser<R> {
                                                     if start_element.prefix == "" {
                                                         //it is fine
                                                     } else {
-                                                        panic!("Namespace prefix not found for element: {}",start_element.name)
+                                                        return Err(SaxError::Parsing(format!("Namespace prefix not found for element: {}",start_element.name)));
                                                     }
                                                 }
                                             }
@@ -1994,7 +2013,7 @@ impl<R: Read> OxideParser<R> {
 
                                     for attr in start_element.attributes.iter_mut() {
                                         //Default namespace doesn't apply to attributes
-                                        if attr.prefix == "" {
+                                        if attr.prefix == "" || attr.prefix == "xmlns" {
                                             continue;
                                         }
                                         match self.namespace_list.iter().rfind(|ns| {
@@ -2192,9 +2211,9 @@ impl<R: Read> OxideParser<R> {
                         // panic!()
                         // self.read_data();
                         // if read bytes are 0 then return eof, otherwise return dummy event
-                        if self.buffer2.len() == 0 {
-                            return xml_sax::Event::EndDocument;
-                        }
+                        // if self.buffer2.len() == 0 {
+                        //     return Ok(xml_sax::Event::EndDocument);
+                        // }
                         println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
                         println!("try to read: {:?}", unsafe {
                             std::str::from_utf8_unchecked(&self.buffer2)
@@ -2267,7 +2286,7 @@ impl<R: Read> OxideParser<R> {
             ParserState::DocEnd => {
                 // EOF
                 if self.buffer2.len() == 0 {
-                    return xml_sax::Event::EndDocument;
+                    return Ok(xml_sax::Event::EndDocument);
                 }
 
                 let res = misc(&self.buffer2);
@@ -2325,14 +2344,14 @@ impl<R: Read> OxideParser<R> {
             }
         }
 
-        event2
+        Ok(event2)
     }
 }
 
 #[test]
 fn test_parser1() {
     let data = r#"<root><A a='x'>
-    <B b="val" a:12='val2' ><C/></B> </A> </root>"#
+    <B b="val" a:b12='val2' ><C/></B> </A> </root>"#
         .as_bytes();
 
     // let mut buf = vec![];
@@ -2341,24 +2360,21 @@ fn test_parser1() {
         let res = p.read_event();
         println!("{:?}", res);
         match res {
-            xml_sax::Event::StartDocument => {}
-            xml_sax::Event::EndDocument => {
+            Ok(event) => match event {
+                xml_sax::Event::StartDocument => {}
+                xml_sax::Event::EndDocument => {
+                    break;
+                }
+                xml_sax::Event::StartElement(el) => {}
+                xml_sax::Event::EndElement(_) => {}
+                xml_sax::Event::Characters(c) => {}
+                xml_sax::Event::Reference(c) => {}
+                _ => {}
+            },
+
+            Err(err) => {
                 break;
             }
-            xml_sax::Event::StartElement(el) => {}
-            xml_sax::Event::EndElement(_) => {}
-            xml_sax::Event::Characters(c) => {}
-            xml_sax::Event::Reference(c) => {}
-            _ => {}
         }
     }
-
-    // let res = p.read_event();
-    // println!("{:?}", res);
-
-    // let res = p.read_event();
-    // println!("{:?}", res);
-
-    // let res = p.read_event();
-    // println!("{:?}", res);
 }

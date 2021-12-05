@@ -4,8 +4,6 @@ use xml_oxide::{parser::OxideParser, sax::Event};
 
 use std::char;
 
-
-
 // let mut my_sax_handler = MySaxHandler {
 //     counter: 0,
 //     end_counter: 0,
@@ -48,23 +46,28 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
         let res = p.read_event();
 
         match res {
-            Event::StartElement(el) => {
-                data.start_counter = data.start_counter + 1;
-                data.start_el_name_vec.push(el.name.to_owned());
-                for _attr in el.attributes.iter() {}
-            }
-            Event::EndElement(el) => {
-                data.end_counter += 1;
-                data.end_el_name_vec.push(el.name.to_owned());
-            }
-            Event::EndDocument => {
+            Ok(event) => match event {
+                Event::StartElement(el) => {
+                    data.start_counter = data.start_counter + 1;
+                    data.start_el_name_vec.push(el.name.to_owned());
+                    for _attr in el.attributes.iter() {}
+                }
+                Event::EndElement(el) => {
+                    data.end_counter += 1;
+                    data.end_el_name_vec.push(el.name.to_owned());
+                }
+                Event::EndDocument => {
+                    break;
+                }
+                Event::Characters(chars) => {
+                    data.characters_buf.push_str(chars);
+                }
+
+                _ => {}
+            },
+            Err(err) => {
                 break;
             }
-            Event::Characters(chars) => {
-                data.characters_buf.push_str(chars);
-            }
-
-            _ => {}
         }
     }
 

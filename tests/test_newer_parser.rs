@@ -20,10 +20,15 @@ fn newer_parser() {
         // println!("{:?}", res);
         result.push_str(&format!("{:?}\n", res));
         match res {
-            Event::EndDocument => {
+            Ok(event) => match event {
+                Event::EndDocument => {
+                    break;
+                }
+                _ => {}
+            },
+            Err(err) => {
                 break;
             }
-            _ => {}
         }
     }
 
@@ -80,35 +85,40 @@ fn newer_parser_commentcdata() {
 
     loop {
         let res = p.read_event();
-
         match res {
-            Event::EndDocument => {
+            Ok(event) => match event {
+                Event::EndDocument => {
+                    break;
+                }
+                Event::StartComment => {
+                    inside_comment = true;
+                }
+                Event::EndComment => {
+                    inside_comment = false;
+                }
+                Event::Characters(c) => {
+                    if inside_comment {
+                        comments.push_str(c);
+                        comments.push_str(",");
+                    }
+                    if inside_cdata {
+                        cdatas.push_str(c);
+                        cdatas.push_str(",");
+                    }
+                }
+                Event::StartCdataSection => {
+                    inside_cdata = true;
+                }
+                Event::EndCdataSection => {
+                    inside_cdata = false;
+                }
+
+                _ => {}
+            },
+
+            Err(err) => {
                 break;
             }
-            Event::StartComment => {
-                inside_comment = true;
-            }
-            Event::EndComment => {
-                inside_comment = false;
-            }
-            Event::Characters(c) => {
-                if inside_comment {
-                    comments.push_str(c);
-                    comments.push_str(",");
-                }
-                if inside_cdata {
-                    cdatas.push_str(c);
-                    cdatas.push_str(",");
-                }
-            }
-            Event::StartCdataSection => {
-                inside_cdata = true;
-            }
-            Event::EndCdataSection => {
-                inside_cdata = false;
-            }
-
-            _ => {}
         }
     }
 

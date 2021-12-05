@@ -21,25 +21,33 @@ fn test_namespaces() {
         let res = p.read_event();
 
         match res {
-            Event::StartElement(el) => {
-                element_namespace_data.push_str(el.name);
-                element_namespace_data.push_str("->");
-                element_namespace_data.push_str(el.namespace);
-                element_namespace_data.push_str(",");
-                //        print!("{}->{},", qualified_name, uri);
+            Ok(event) => {
+                match event {
+                    Event::StartElement(el) => {
+                        element_namespace_data.push_str(el.name);
+                        element_namespace_data.push_str("->");
+                        element_namespace_data.push_str(el.namespace);
+                        element_namespace_data.push_str(",");
+                        //        print!("{}->{},", qualified_name, uri);
 
-                for attr in el.attributes.iter() {
-                    attribute_namespace_data.push_str(attr.name);
-                    attribute_namespace_data.push_str("->");
-                    attribute_namespace_data.push_str(attr.namespace);
-                    attribute_namespace_data.push_str(",");
+                        for attr in el.attributes.iter() {
+                            attribute_namespace_data.push_str(attr.name);
+                            attribute_namespace_data.push_str("->");
+                            attribute_namespace_data.push_str(attr.namespace);
+                            attribute_namespace_data.push_str(",");
+                        }
+                    }
+                    Event::EndDocument => {
+                        break;
+                    }
+
+                    _ => {}
                 }
             }
-            Event::EndDocument => {
+
+            Err(err) => {
                 break;
             }
-
-            _ => {}
         }
     }
 
