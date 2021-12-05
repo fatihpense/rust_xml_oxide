@@ -80,7 +80,7 @@ fn utf8_char_width(b: u8) -> usize {
 
 // [2] Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
 #[inline]
-pub fn is_xml_char_t(chr: char) -> bool {
+fn is_xml_char_t(chr: char) -> bool {
     chr == '\u{9}'
         || (chr >= '\u{A}' && chr <= '\u{D}')
         || (chr >= '\u{20}' && chr <= '\u{D7FF}')
@@ -110,7 +110,7 @@ pub fn is_xml_char_t(chr: char) -> bool {
 // NameStartChar.expected_chars.push(':');
 // NameStartChar.expected_chars.push('_');
 #[inline]
-pub fn is_namestart_char_t(chr: char) -> bool {
+fn is_namestart_char_t(chr: char) -> bool {
     (chr >= 'A' && chr <= 'Z')
         || (chr >= 'a' && chr <= 'z')
         || (chr >= '\u{C0}' && chr <= '\u{D6}')
@@ -129,7 +129,7 @@ pub fn is_namestart_char_t(chr: char) -> bool {
         || chr == '_'
 }
 
-pub fn namestart_char(input: &[u8]) -> IResult<&[u8], &[u8]> {
+fn namestart_char(input: &[u8]) -> IResult<&[u8], &[u8]> {
     if input.len() == 0 {
         return Err(Err::Incomplete(Needed::new(1)));
     }
@@ -153,7 +153,7 @@ pub fn namestart_char(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
 // [4a] NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
 #[inline]
-pub fn is_namechar_t(chr: char) -> bool {
+fn is_namechar_t(chr: char) -> bool {
     is_namestart_char_t(chr)
         || (chr >= '0' && chr <= '9')
         || (chr >= '\u{0300}' && chr <= 'z')
@@ -163,7 +163,7 @@ pub fn is_namechar_t(chr: char) -> bool {
         || chr == '\u{B7}'
 }
 
-pub fn namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
+fn namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
     if input.len() == 0 {
         return Err(Err::Incomplete(Needed::new(1)));
     }
@@ -185,7 +185,7 @@ pub fn namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
     }
 }
 
-pub fn many0_custom_chardata<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
+fn many0_custom_chardata<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
     I: Clone + InputLength,
     F: Parser<I, O, E>,
@@ -213,7 +213,7 @@ where
         }
     }
 }
-pub fn many0_custom_trycomplete<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
+fn many0_custom_trycomplete<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
     I: Clone + InputLength,
     F: Parser<I, O, E>,
@@ -368,6 +368,15 @@ struct SAXAttribute2 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct SAXAttributeNsAware {
+    pub value: std::ops::Range<usize>,
+    pub qualified_name: std::ops::Range<usize>,
+    pub prefix: std::ops::Range<usize>,
+    pub local_name: std::ops::Range<usize>,
+    pub namespace: std::ops::Range<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct StartElement<'a> {
     pub name: &'a str,
     pub attributes: Vec<SAXAttribute<'a>>,
@@ -480,11 +489,11 @@ fn test_stag() {
 // no '>' except ']]>'
 // The spec is not clear but we also apply Char restrictions
 #[inline]
-pub fn is_CharData_single_pure_t(chr: char) -> bool {
+fn is_CharData_single_pure_t(chr: char) -> bool {
     chr != '<' && chr != '&' && is_xml_char_t(chr)
 }
 
-pub fn CharData_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
+fn CharData_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
     if input.len() == 0 {
         return Err(Err::Incomplete(Needed::new(1)));
     }
@@ -1255,13 +1264,158 @@ fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
 // [2] PrefixedAttName ::= 'xmlns:'
 // [3] DefaultAttName ::= 'xmlns'
 // [4] NCName ::= Name - (Char* ':' Char*)	/* An XML Name, minus the ":" */
-// [5] NCNameChar ::= NameChar - ':' /* An XML NameChar, minus the ":" */
-// [6] NCNameStartChar ::= NCName - ( Char Char Char* ) /* The first letter of an NCName */
 // [7] QName ::= PrefixedName | UnprefixedName
 // [8] PrefixedName ::= Prefix ':' LocalPart
 // [9] UnprefixedName ::= LocalPart
 // [10] Prefix ::= NCName
 // [11] LocalPart ::= NCName
+
+//non normative:
+// [5] NCNameChar ::= NameChar - ':' /* An XML NameChar, minus the ":" */
+// [6] NCNameStartChar ::= NCName - ( Char Char Char* ) /* The first letter of an NCName */
+#[inline]
+fn is_nc_namestart_char_t(chr: char) -> bool {
+    (chr >= 'A' && chr <= 'Z')
+        || (chr >= 'a' && chr <= 'z')
+        || (chr >= '\u{C0}' && chr <= '\u{D6}')
+        || (chr >= '\u{D8}' && chr <= '\u{F6}')
+        || (chr >= '\u{F8}' && chr <= '\u{2FF}')
+        || (chr >= '\u{370}' && chr <= '\u{37D}')
+        || (chr >= '\u{37F}' && chr <= '\u{1FFF}')
+        || (chr >= '\u{200C}' && chr <= '\u{200D}')
+        || (chr >= '\u{2070}' && chr <= '\u{218F}')
+        || (chr >= '\u{2C00}' && chr <= '\u{2FEF}')
+        || (chr >= '\u{3001}' && chr <= '\u{D7FF}')
+        || (chr >= '\u{F900}' && chr <= '\u{FDCF}')
+        || (chr >= '\u{FDF0}' && chr <= '\u{FFFD}')
+        || (chr >= '\u{10000}' && chr <= '\u{EFFFF}')
+        // || chr == ':'
+        || chr == '_'
+}
+
+fn nc_namestart_char(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    if input.len() == 0 {
+        return Err(Err::Incomplete(Needed::new(1)));
+    }
+    let width = utf8_char_width(input[0]);
+
+    if input.len() < width {
+        return Err(Err::Incomplete(Needed::new(width - input.len())));
+    }
+
+    let c = match std::str::from_utf8(&input[..width]).ok() {
+        Some(s) => s.chars().next().unwrap(),
+        None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+    };
+
+    if is_nc_namestart_char_t(c) {
+        return Ok((&input[width..], &input[0..width]));
+    } else {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+}
+
+// [4a] NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
+#[inline]
+fn is_nc_namechar_t(chr: char) -> bool {
+    is_nc_namestart_char_t(chr)
+        || (chr >= '0' && chr <= '9')
+        || (chr >= '\u{0300}' && chr <= 'z')
+        || (chr >= '\u{203F}' && chr <= '\u{2040}')
+        || chr == '-'
+        || chr == '.'
+        || chr == '\u{B7}'
+}
+
+fn nc_namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    if input.len() == 0 {
+        return Err(Err::Incomplete(Needed::new(1)));
+    }
+    let width = utf8_char_width(input[0]);
+
+    if input.len() < width {
+        return Err(Err::Incomplete(Needed::new(width - input.len())));
+    }
+
+    let c = match std::str::from_utf8(&input[..width]).ok() {
+        Some(s) => s.chars().next().unwrap(),
+        None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+    };
+
+    if is_nc_namechar_t(c) {
+        return Ok((&input[width..], &input[0..width]));
+    } else {
+        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    }
+}
+
+fn nc_name(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(pair(nc_namestart_char, many0_custom_chardata(nc_namechar)))(input)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct QName<'a> {
+    prefix: &'a str,
+    local_name: &'a str,
+}
+fn QName(input: &[u8]) -> IResult<&[u8], QName> {
+    alt((
+        //first try harder alternative
+        (map(
+            terminated(
+                separated_pair(nc_name, char(':'), nc_name),
+                nom::combinator::eof,
+            ),
+            |(pre, loc)| QName {
+                prefix: unsafe { std::str::from_utf8_unchecked(pre) },
+                local_name: unsafe { std::str::from_utf8_unchecked(loc) },
+            },
+        )),
+        map(terminated(nc_name, nom::combinator::eof), |a| QName {
+            prefix: "",
+            local_name: unsafe { std::str::from_utf8_unchecked(a) },
+        }),
+    ))(input)
+}
+
+#[test]
+fn test_qname() {
+    assert_eq!(
+        QName(":no".as_bytes()),
+        Err(Err::Error(error_position!(
+            ":no".as_bytes(),
+            ErrorKind::Char
+        )))
+    );
+
+    //this should fail
+    assert_eq!(
+        QName("a:b:".as_bytes()),
+        Err(Err::Error(error_position!(
+            ":b:".as_bytes(),
+            ErrorKind::Eof
+        )))
+    );
+
+    assert_eq!(
+        QName("a:b".as_bytes()),
+        Ok((
+            &b""[..],
+            QName {
+                prefix: &"a",
+                local_name: &"b"
+            }
+        ))
+    );
+
+    assert_eq!(
+        QName("a:123".as_bytes()),
+        Err(Err::Error(error_position!(
+            ":123".as_bytes(),
+            ErrorKind::Eof
+        )))
+    );
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ParserState {
@@ -1347,6 +1501,9 @@ fn convert_start_element<'a>(
         attributes.push(xml_sax::Attribute {
             value: &strbuffer[att.value],
             name: &strbuffer[att.qualified_name],
+            local_name: "",
+            namespace: "",
+            prefix: "",
         });
     }
 
@@ -1354,6 +1511,10 @@ fn convert_start_element<'a>(
         name: &strbuffer[start..(start + size)],
         attributes: attributes,
         is_empty: false,
+
+        local_name: "",
+        namespace: "",
+        prefix: "",
     }
 }
 
@@ -1368,19 +1529,34 @@ fn push_str_get_range(strbuffer: &mut String, addition: &str) -> Range<usize> {
     range
 }
 
+fn push_ns_values_get_ns(
+    namespace_strbuffer: &mut String,
+    prefix: &str,
+    value: &str,
+    element_level: usize,
+) -> Namespace {
+    let range_prefix = push_str_get_range(namespace_strbuffer, "");
+    let range_value = push_str_get_range(namespace_strbuffer, value);
+    Namespace {
+        level: element_level,
+        prefix: range_prefix,
+        value: range_value,
+    }
+}
+
 impl<R: Read> OxideParser<R> {
     // This method "consumes" the resources of the caller object
     // `self` desugars to `self: Self`
 
     pub fn start(reader: R) -> OxideParser<R> {
         OxideParser {
-            state: ParserState::DocStartBeforeXmlDecl,
+            state: ParserState::Initial,
             bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
             buffer2: vec![],
             strbuffer: String::new(),
 
-            element_level: 0,
+            element_level: 0, // should be same as self.element_list.len()
             element_list: vec![],
             element_strbuffer: String::new(),
 
@@ -1608,7 +1784,30 @@ impl<R: Read> OxideParser<R> {
                             ContentRelaxed::StartElement(event1) => {
                                 //todo decode
 
-                                let start_element =
+                                if self.is_namespace_aware {
+                                    // clear up namespaces
+                                    match self
+                                        .namespace_list
+                                        .iter()
+                                        .rposition(|ns| ns.level <= self.element_level)
+                                    {
+                                        Some(pos) => {
+                                            if let Some(starting_pos) = self
+                                                .namespace_list
+                                                .get(pos + 1)
+                                                .map(|ns| ns.prefix.start)
+                                            {
+                                                self.namespace_list.truncate(pos + 1);
+                                                self.namespace_strbuffer.truncate(starting_pos);
+                                            }
+                                        }
+                                        None => {
+                                            // nothing to remove
+                                        }
+                                    }
+                                }
+
+                                let mut start_element =
                                     convert_start_element(&mut self.strbuffer, event1);
                                 self.element_level += 1;
 
@@ -1620,10 +1819,127 @@ impl<R: Read> OxideParser<R> {
                                 );
                                 self.element_list.push(range);
                                 //todo: add namespaces
+                                if self.is_namespace_aware {
+                                    //first process namespace definitions
+                                    for attr in start_element.attributes.iter_mut() {
+                                        match QName(attr.name.as_bytes()) {
+                                            Ok(qres) => {
+                                                let qname = qres.1;
+
+                                                if qname.prefix == "" && qname.local_name == "xmlns"
+                                                {
+                                                    //set default namespace
+                                                    let ns = push_ns_values_get_ns(
+                                                        &mut self.namespace_strbuffer,
+                                                        "",
+                                                        attr.value,
+                                                        self.element_level,
+                                                    );
+                                                    self.namespace_list.push(ns);
+                                                }
+
+                                                if qname.prefix == "xmlns" {
+                                                    //set prefixed namespace
+                                                    let prefix = qname.local_name;
+                                                    let ns = push_ns_values_get_ns(
+                                                        &mut self.namespace_strbuffer,
+                                                        prefix,
+                                                        attr.value,
+                                                        self.element_level,
+                                                    );
+                                                    self.namespace_list.push(ns);
+                                                }
+                                                attr.local_name = qname.local_name;
+                                                attr.prefix = qname.prefix;
+                                                // let range_local_name = push_str_get_range(
+                                                //     &mut self.strbuffer,
+                                                //     qname.local_name,
+                                                // );
+                                                // attr.local_name = &self.strbuffer[range_local_name];
+                                            }
+                                            Err(e) => {
+                                                panic!("attribute not conforming QName spec")
+                                            }
+                                        }
+                                    }
+
+                                    for attr in start_element.attributes.iter_mut() {
+                                        //Default namespace doesn't apply to attributes
+                                        if attr.prefix == "" {
+                                            continue;
+                                        }
+                                        match self.namespace_list.iter().rfind(|ns| {
+                                            &self.namespace_strbuffer[ns.prefix.clone()]
+                                                == attr.prefix
+                                        }) {
+                                            Some(ns) => {
+                                                attr.namespace =
+                                                    &self.namespace_strbuffer[ns.value.clone()]
+                                            }
+                                            None => {
+                                                panic!("Namespace prefix not found")
+                                            }
+                                        }
+                                    }
+
+                                    //resolve namespaces for element and attributes.
+
+                                    match QName(start_element.name.as_bytes()) {
+                                        Ok(qres) => {
+                                            let qname = qres.1;
+                                            start_element.local_name = qname.local_name;
+                                            start_element.prefix = qname.prefix;
+
+                                            match self.namespace_list.iter().rfind(|ns| {
+                                                &self.namespace_strbuffer[ns.prefix.clone()]
+                                                    == start_element.prefix
+                                            }) {
+                                                Some(ns) => {
+                                                    start_element.namespace =
+                                                        &self.namespace_strbuffer[ns.value.clone()]
+                                                }
+
+                                                None => {
+                                                    if start_element.prefix == "" {
+                                                        //it is fine
+                                                    } else {
+                                                        panic!("Namespace prefix not found for element: {}",start_element.name)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            panic!("element name not conforming QName spec")
+                                        }
+                                    }
+                                }
 
                                 event2 = xml_sax::Event::StartElement(start_element);
                             }
                             ContentRelaxed::EmptyElemTag(event1) => {
+                                if self.is_namespace_aware {
+                                    // clear up namespaces
+                                    match self
+                                        .namespace_list
+                                        .iter()
+                                        .rposition(|ns| ns.level <= self.element_level)
+                                    {
+                                        Some(pos) => {
+                                            if let Some(starting_pos) = self
+                                                .namespace_list
+                                                .get(pos + 1)
+                                                .map(|ns| ns.prefix.start)
+                                            {
+                                                self.namespace_list.truncate(pos + 1);
+                                                self.namespace_strbuffer.truncate(starting_pos);
+                                            }
+                                        }
+                                        None => {
+                                            // nothing to remove
+                                        }
+                                    }
+                                }
+
                                 //todo decode
                                 let mut start_elem =
                                     convert_start_element(&mut self.strbuffer, event1);
@@ -1631,6 +1947,7 @@ impl<R: Read> OxideParser<R> {
                                 event2 = xml_sax::Event::StartElement(start_elem);
 
                                 //todo: add & clear up namespaces
+                                if self.is_namespace_aware {}
 
                                 //add endelement after this? no..?
                             }
@@ -1651,9 +1968,33 @@ impl<R: Read> OxideParser<R> {
                                         }
                                     }
                                     None => {
-                                        panic!()
+                                        panic!("no!")
                                     }
                                 }
+
+                                if self.is_namespace_aware {
+                                    // clear up namespaces
+                                    match self
+                                        .namespace_list
+                                        .iter()
+                                        .rposition(|ns| ns.level <= self.element_level)
+                                    {
+                                        Some(pos) => {
+                                            if let Some(starting_pos) = self
+                                                .namespace_list
+                                                .get(pos + 1)
+                                                .map(|ns| ns.prefix.start)
+                                            {
+                                                self.namespace_list.truncate(pos + 1);
+                                                self.namespace_strbuffer.truncate(starting_pos);
+                                            }
+                                        }
+                                        None => {
+                                            // nothing to remove
+                                        }
+                                    }
+                                }
+
                                 // let range = push_str_get_range(
                                 //     &mut self.element_strbuffer,
                                 //     start_element.name,
@@ -1663,16 +2004,49 @@ impl<R: Read> OxideParser<R> {
                                 let start = self.strbuffer.len();
                                 let size = event1.name.len();
                                 self.strbuffer.push_str(event1.name);
-
-                                event2 = xml_sax::Event::EndElement(xml_sax::EndElement {
+                                let mut end_element = xml_sax::EndElement {
                                     name: &self.strbuffer[start..(start + size)],
-                                });
+                                    local_name: "",
+                                    prefix: "",
+                                    namespace: "",
+                                };
 
                                 self.element_level -= 1;
                                 if self.element_level == 0 {
                                     self.state = ParserState::DocEnd;
                                 }
-                                //todo: clear up namespaces
+
+                                if self.is_namespace_aware {
+                                    match QName(end_element.name.as_bytes()) {
+                                        Ok(qres) => {
+                                            let qname = qres.1;
+                                            end_element.local_name = qname.local_name;
+                                            end_element.prefix = qname.prefix;
+
+                                            match self.namespace_list.iter().rfind(|ns| {
+                                                &self.namespace_strbuffer[ns.prefix.clone()]
+                                                    == end_element.prefix
+                                            }) {
+                                                Some(ns) => {
+                                                    end_element.namespace =
+                                                        &self.namespace_strbuffer[ns.value.clone()]
+                                                }
+                                                None => {
+                                                    if end_element.prefix == "" {
+                                                        //it is fine
+                                                    } else {
+                                                        panic!("Namespace prefix not found for element")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            panic!("element name not conforming QName spec")
+                                        }
+                                    }
+                                }
+
+                                event2 = xml_sax::Event::EndElement(end_element);
                             }
                             ContentRelaxed::Reference(event1) => {
                                 // let start = self.strbuffer.len();
