@@ -4,7 +4,7 @@ use xml_oxide::{parser::OxideParser, sax::Event};
 
 use std::char;
 
-use std::time::{Duration, Instant};
+
 
 // let mut my_sax_handler = MySaxHandler {
 //     counter: 0,
@@ -51,7 +51,7 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
             Event::StartElement(el) => {
                 data.start_counter = data.start_counter + 1;
                 data.start_el_name_vec.push(el.name.to_owned());
-                for attr in el.attributes.iter() {}
+                for _attr in el.attributes.iter() {}
             }
             Event::EndElement(el) => {
                 data.end_counter += 1;
@@ -73,7 +73,7 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
 
 #[test]
 fn test_basic() {
-    let mut s = String::from("<rootEl><value>5</value></rootEl>");
+    let s = String::from("<rootEl><value>5</value></rootEl>");
 
     let data = collect_with_parser(s.as_bytes());
 
@@ -97,7 +97,7 @@ fn test_66_EntityRef() {
     // println!("{}", c2);
     assert_eq!(c2, '<'); //8898  &#x022C2;    60 &#x0003C;
 
-    let mut s = String::from("<rootEl><value>1&lt;2&#60;3&#x0003C;4</value></rootEl>");
+    let s = String::from("<rootEl><value>1&lt;2&#60;3&#x0003C;4</value></rootEl>");
 
     let data = collect_with_parser(s.as_bytes());
 
@@ -107,7 +107,7 @@ fn test_66_EntityRef() {
 
 #[test]
 fn test_18_CDATA() {
-    let mut s = String::from(
+    let s = String::from(
         "<rootEl>1&lt;2&#60;3&#x0003C;4<![CDATA[ \
          1&lt;2&#60;3&#x0003C;4]]><![CDATA[]]></rootEl>",
     );
@@ -123,7 +123,7 @@ fn test_18_CDATA() {
 // comments should be ignored in content handler
 #[test]
 fn test_15_Comment() {
-    let mut s = String::from("<rootEl>comments<!--are ignored--><!---->.</rootEl>");
+    let s = String::from("<rootEl>comments<!--are ignored--><!---->.</rootEl>");
     let data = collect_with_parser(s.as_bytes());
 
     println!("{}", data.characters_collected_vec.get(0).unwrap());
@@ -133,7 +133,7 @@ fn test_15_Comment() {
 #[test]
 #[should_panic]
 fn test_15_Comment_not_well_formed() {
-    let mut s = String::from(
+    let s = String::from(
         "<rootEl>comments<!-- are not well formed with 3 \
          hyphen at the end unless it is empty---><!---->.</rootEl>",
     );
