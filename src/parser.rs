@@ -1579,13 +1579,17 @@ impl<R: Read> OxideParser<R> {
         }
     }
 
-    fn read_data(&mut self) {
-        self.bufreader.fill_buf().unwrap();
+    fn read_data(&mut self) -> Result<(), std::io::Error> {
+        match self.bufreader.fill_buf() {
+            Ok(ok) => {}
+            Err(err) => return Err(err),
+        }
         let data2 = self.bufreader.buffer();
 
         self.buffer2.extend_from_slice(data2);
 
         self.bufreader.consume(data2.len());
+        Ok(())
     }
 
     // , buf: &'b [u8]
@@ -1596,7 +1600,7 @@ impl<R: Read> OxideParser<R> {
         self.strbuffer.clear();
 
         if self.bufreader.capacity() > self.buffer2.len() {
-            self.read_data();
+            self.read_data()?
         }
 
         // let mut event: StartElement = StartElement {
@@ -1778,7 +1782,11 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        return Err(SaxError::Parsing(format!(
+                            "Expecting comment content or comment closing tag "
+                        )))
+                    }
                 }
             }
             ParserState::Content => {
@@ -1875,7 +1883,10 @@ impl<R: Read> OxideParser<R> {
                                                 // attr.local_name = &self.strbuffer[range_local_name];
                                             }
                                             Err(e) => {
-                                                panic!("attribute not conforming QName spec")
+                                                return Err(SaxError::Parsing(format!(
+                                                    "Attribute does not conform to QName spec: {}",
+                                                    attr.name
+                                                )))
                                             }
                                         }
                                     }
@@ -1889,14 +1900,13 @@ impl<R: Read> OxideParser<R> {
                                             &self.namespace_strbuffer[ns.prefix.clone()]
                                                 == attr.prefix
                                         }) {
-                                            Some(ns) => {
+                                                    Some(ns) => {
                                                 attr.namespace =
                                                     &self.namespace_strbuffer[ns.value.clone()]
                                             }
                                             None => {
                                                 return Err(SaxError::Parsing(format!(
-                                                    "Namespace prefix not found: {} , element: {}",
-                                                    attr.prefix, start_element.name
+                                                    "Namespace not found for prefix: {} , attribute: {} , element: {}", attr.prefix, attr.name, start_element.name
                                                 )))
                                             }
                                         }
@@ -1929,7 +1939,10 @@ impl<R: Read> OxideParser<R> {
                                             }
                                         }
                                         Err(e) => {
-                                            panic!("element name not conforming QName spec")
+                                            return Err(SaxError::Parsing(format!(
+                                                "Element name does not conform to QName spec: {}",
+                                                start_element.name
+                                            )))
                                         }
                                     }
                                 }
@@ -2005,7 +2018,10 @@ impl<R: Read> OxideParser<R> {
                                                 // attr.local_name = &self.strbuffer[range_local_name];
                                             }
                                             Err(e) => {
-                                                panic!("attribute not conforming QName spec")
+                                                return Err(SaxError::Parsing(format!(
+                                                    "Attribute does not conform to QName spec: {}",
+                                                    attr.name
+                                                )))
                                             }
                                         }
                                     }
@@ -2024,7 +2040,10 @@ impl<R: Read> OxideParser<R> {
                                                     &self.namespace_strbuffer[ns.value.clone()]
                                             }
                                             None => {
-                                                panic!("Namespace prefix not found")
+                                                return Err(SaxError::Parsing(format!(
+                                                    "Namespace not found for prefix: {} , attribute: {} , element: {}",
+                                                    attr.prefix, attr.name,start_element.name
+                                                )));
                                             }
                                         }
                                     }
@@ -2050,13 +2069,19 @@ impl<R: Read> OxideParser<R> {
                                                     if start_element.prefix == "" {
                                                         //it is fine
                                                     } else {
-                                                        panic!("Namespace prefix not found for element: {}",start_element.name)
+                                                        return Err(SaxError::Parsing(format!(
+                                                            "Namespace not found for Element prefix. element: {}",
+                                                            start_element.name
+                                                        )));
                                                     }
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            panic!("element name not conforming QName spec")
+                                            return Err(SaxError::Parsing(format!(
+                                                "Element name does not conform to QName spec: {}",
+                                                start_element.name
+                                            )));
                                         }
                                     }
                                 }
@@ -2079,16 +2104,20 @@ impl<R: Read> OxideParser<R> {
                                         if &self.element_strbuffer[r.clone()] == event1.name {
                                             self.element_strbuffer.truncate(r.start);
                                         } else {
-                                            panic!(
+                                            return Err(SaxError::Parsing(format!(
                                                 "Expected closing tag: {} ,found: {}",
                                                 &self.element_strbuffer[r.clone()],
                                                 event1.name
-                                            );
+                                            )));
+
                                             // TODO Expected closing tag: ... &self.element_strbuffer[r.clone()] found event1.name
                                         }
                                     }
                                     None => {
-                                        panic!("no!")
+                                        return Err(SaxError::Parsing(format!(
+                                            "No starting tag for: {}",
+                                            event1.name
+                                        )))
                                     }
                                 }
 
@@ -2155,13 +2184,19 @@ impl<R: Read> OxideParser<R> {
                                                     if end_element.prefix == "" {
                                                         //it is fine
                                                     } else {
-                                                        panic!("Namespace prefix not found for element")
+                                                        return Err(SaxError::Parsing(format!(
+                                                            "Namespace prefix not found for element: {}",
+                                                            end_element.name
+                                                        )));
                                                     }
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            panic!("element name not conforming QName spec")
+                                            return Err(SaxError::Parsing(format!(
+                                                "Element name does not conform to QName spec: {}",
+                                                end_element.name
+                                            )))
                                         }
                                     }
                                 }
@@ -2207,27 +2242,24 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(Err::Incomplete(e)) => {
-                        // panic!()
-                        // self.read_data();
-                        // if read bytes are 0 then return eof, otherwise return dummy event
-                        // if self.buffer2.len() == 0 {
-                        //     return Ok(xml_sax::Event::EndDocument);
-                        // }
-                        println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
-                        println!("try to read: {:?}", unsafe {
-                            std::str::from_utf8_unchecked(&self.buffer2)
-                        });
-                        println!("err: {:?}", e);
-                        panic!()
+                        let ending = String::from_utf8_lossy(&self.buffer2);
+
+                        return Err(SaxError::Parsing(format!(
+                            "Incomplete file / Premature end-of-file: {}",
+                            ending
+                        )));
                     }
                     Err(e) => {
-                        println!("try to read bytes: {:?}", unsafe { &self.buffer2 });
-                        println!("try to read: {:?}", unsafe {
-                            std::str::from_utf8_unchecked(&self.buffer2)
-                        });
-                        println!("err: {:?}", e);
+                        let ending = String::from_utf8_lossy(&self.buffer2);
+                        let ending_truncated = match ending.char_indices().nth(50) {
+                            None => &ending,
+                            Some((idx, _)) => &ending[..idx],
+                        };
 
-                        panic!()
+                        return Err(SaxError::Parsing(format!(
+                            "Expected one of (CharData | element | Reference | CDSect | PI | Comment), found: {}",
+                            ending_truncated
+                        )));
                     }
                 }
             }
@@ -2254,7 +2286,11 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        return Err(SaxError::Parsing(format!(
+                            "Expecting CDATA content or CDATA closing tag "
+                        )))
+                    }
                 }
             }
             ParserState::InsideComment => {
@@ -2279,7 +2315,11 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        return Err(SaxError::Parsing(format!(
+                            "Expecting comment content or comment closing tag "
+                        )))
+                    }
                 }
             }
             ParserState::DocEnd => {
@@ -2312,7 +2352,9 @@ impl<R: Read> OxideParser<R> {
                         }
                     }
                     Err(err) => {
-                        panic!()
+                        return Err(SaxError::Parsing(format!(
+                            "Unexpected entity/content at the end of the document."
+                        )))
                     }
                 }
             }
@@ -2338,7 +2380,11 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => panic!(),
+                    Err(err) => {
+                        return Err(SaxError::Parsing(format!(
+                            "Expecting comment content or comment closing tag "
+                        )))
+                    }
                 }
             }
         }
