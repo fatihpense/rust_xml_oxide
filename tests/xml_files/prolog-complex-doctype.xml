@@ -1,0 +1,39 @@
+
+<!DOCTYPE sgml [
+  <!ELEMENT sgml (img)*>
+   <!--
+     the optional "type" attribute value can only be set to this notation.
+   -->
+  <!ATTLIST sgml
+    type  NOTATION (
+      type-vendor-specific ) #IMPLIED>
+
+  <!ELEMENT img ANY> <!-- optional content can be only parsable SGML or XML data -->
+   <!--
+     The optional "title" attribute value must be parsable as text.
+     The optional "data" attribute value is set to an unparsed external entity.
+     The optional "type" attribute value can only be one of the two notations.
+   -->
+  <!ATTLIST img
+    title CDATA              #IMPLIED
+    data  ENTITY             #IMPLIED
+    type  NOTATION (
+      type-image-svg |
+      type-image-gif )       #IMPLIED>
+
+  <!--
+    Notations are referencing external entities and may be set in the "type" attributes above,
+    or must be referenced by any defined external entities that cannot be parsed.
+  -->
+  <!NOTATION type-image-svg       PUBLIC "-//W3C//DTD SVG 1.1//EN"
+     "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+  <!NOTATION type-image-gif       PUBLIC "image/gif">
+  <!NOTATION type-vendor-specific PUBLIC "application/VND.specific+sgml">
+
+  <!ENTITY example1SVGTitle "Title of example1.svg"> <!-- parsed internal entity -->
+  <!ENTITY example1SVG      SYSTEM "example1.svg"> <!-- parsed external entity -->
+  <!ENTITY example1GIFTitle "Title of example1.gif"> <!-- parsed internal entity -->
+  <!ENTITY example1GIF      SYSTEM "example1.gif" NDATA type-image-gif> <!-- unparsed external entity -->
+]>
+
+<sgml></sgml>

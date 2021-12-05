@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 1 -->
+<?xml-stylesheet type="text/xsl" href="style.xsl"?>
+   
+<root>
+    <?xml-stylesheet type="text/xsl" href="style.xsl"?>
+    <!-- This is a comment -->
+    <![CDATA[abc]]>
+    <![CDATA[<&>]]>
+</root>
+<!-- This is a comment -->
+
+<?xml-stylesheet type="text/xsl" href="style.xsl"?>
