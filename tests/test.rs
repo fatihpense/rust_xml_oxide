@@ -59,6 +59,23 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
                 }
                 Event::Characters(chars) => {
                     data.characters_buf.push_str(chars);
+                    data.characters_collected_vec.push(chars.to_string());
+                }
+                Event::Cdata(chars) => {
+                    data.characters_buf.push_str(chars);
+                }
+                Event::Reference(reference) => {
+                    println!(
+                        "raw: {:?} , resolved {:?}",
+                        reference.raw, reference.resolved
+                    );
+                    match reference.resolved {
+                        Some(resolved) => {
+                            data.characters_buf.push_str(resolved);
+                        }
+                        None => {}
+                    }
+                    // data.characters_buf.push_str(chars);
                 }
 
                 _ => {}
@@ -102,7 +119,7 @@ fn test_66_entity_ref() {
 
     let data = collect_with_parser(s.as_bytes());
 
-    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "1<2<3<4");
+    assert_eq!(data.characters_buf, "1<2<3<4");
     // assert_eq!(my_sax_handler.end, );
 }
 
@@ -114,11 +131,8 @@ fn test_18_cdata() {
     );
     let data = collect_with_parser(s.as_bytes());
 
-    println!("{}", data.characters_collected_vec.get(0).unwrap());
-    assert_eq!(
-        data.characters_collected_vec.get(0).unwrap(),
-        "1<2<3<4 1&lt;2&#60;3&#x0003C;4"
-    );
+    println!("{}", data.characters_buf);
+    assert_eq!(data.characters_buf, "1<2<3<4 1&lt;2&#60;3&#x0003C;4");
 }
 
 // comments should be ignored in content handler
@@ -128,7 +142,8 @@ fn test_15_comment() {
     let data = collect_with_parser(s.as_bytes());
 
     println!("{}", data.characters_collected_vec.get(0).unwrap());
-    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments.");
+    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments");
+    assert_eq!(data.characters_collected_vec.get(1).unwrap(), ".");
 }
 
 #[test]

@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<root>
     <!-- This is a comment -->
+<root>
+
     <![CDATA[abc]]>
+    <!--comments can be-->
     <![CDATA[<&>]]>
+    <element>123<!--here--></element>
+    <!--here-->
+
+    <a><![CDATA[ ]] & < >  ]]></a>
 </root>
+
+<!--and here-->

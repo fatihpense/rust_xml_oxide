@@ -2219,21 +2219,68 @@ impl<R: Read> OxideParser<R> {
                                 let range: Range<usize> =
                                     push_str_get_range(&mut self.strbuffer, event1.initial);
 
-                                let range_resolved = match event1.initial {
-                                    "&amp;" => push_str_get_range(&mut self.strbuffer, "&"),
-                                    "&lt" => push_str_get_range(&mut self.strbuffer, "<"),
-                                    "&gt;" => push_str_get_range(&mut self.strbuffer, ">"),
-                                    "&quot;" => push_str_get_range(&mut self.strbuffer, "\""),
-                                    "&apos;" => push_str_get_range(&mut self.strbuffer, "'"),
-                                    _ => push_str_get_range(&mut self.strbuffer, event1.initial),
+                                //we handle the case when it is a character, not a string reference
+                                let raw = event1.initial;
+                                let resolved_char: Option<char>;
+                                if raw.starts_with("&#x") {
+                                    let hex_val = &raw[3..raw.len() - 1];
+
+                                    resolved_char = match u32::from_str_radix(&hex_val, 16) {
+                                        Ok(a) => match char::from_u32(a) {
+                                            Some(c) => Some(c),
+                                            None => None,
+                                        },
+                                        Err(_) => None,
+                                    }
+                                } else if raw.starts_with("&#") {
+                                    let hex_val = &raw[2..raw.len() - 1];
+
+                                    resolved_char = match u32::from_str_radix(&hex_val, 10) {
+                                        Ok(a) => match char::from_u32(a) {
+                                            Some(c) => Some(c),
+                                            None => None,
+                                        },
+                                        Err(_) => None,
+                                    }
+                                } else {
+                                    resolved_char = match event1.initial {
+                                        // we don't need .as_ref() or &* as it is not String -> https://github.com/rust-lang/rust/issues/28606
+                                        "&amp;" => Some('&'),
+                                        "&lt;" => Some('<'),
+                                        "&gt;" => Some('>'),
+                                        "&quot;" => Some('"'),
+                                        "&apos;" => Some('\''),
+                                        _ => None,
+                                    }
+                                }
+
+                                let range_resolved: Option<Range<usize>> = match resolved_char {
+                                    Some(ch) => {
+                                        let mut tmp = [0u8; 4];
+                                        let addition = ch.encode_utf8(&mut tmp);
+                                        Some(push_str_get_range(&mut self.strbuffer, addition))
+                                    }
+                                    None => None,
+                                    // &* -> https://github.com/rust-lang/rust/issues/28606
+                                    // "&amp;" => Some(push_str_get_range(&mut self.strbuffer, "&")),
+                                    // "&lt;" => Some(push_str_get_range(&mut self.strbuffer, "<")),
+                                    // "&gt;" => Some(push_str_get_range(&mut self.strbuffer, ">")),
+                                    // "&quot;" => Some(push_str_get_range(&mut self.strbuffer, "\"")),
+                                    // "&apos;" => Some(push_str_get_range(&mut self.strbuffer, "'")),
+                                    // _ => None,
                                 };
 
-                                //todo resolve char refs
                                 //we are ignoring DTD entity refs
-                                event2 = xml_sax::Event::Reference(xml_sax::Reference {
+
+                                let reference_event = xml_sax::Reference {
                                     raw: &self.strbuffer[range],
-                                    resolved: Some(&self.strbuffer[range_resolved]),
-                                })
+                                    resolved: match range_resolved {
+                                        Some(range) => Some(&self.strbuffer[range]),
+                                        None => None,
+                                    },
+                                };
+
+                                event2 = xml_sax::Event::Reference(reference_event)
                             }
                             ContentRelaxed::CdataStart => {
                                 event2 = xml_sax::Event::StartCdataSection;
