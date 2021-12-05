@@ -2173,7 +2173,7 @@ impl<R: Read> OxideParser<R> {
                                 //we are ignoring DTD entity refs
                                 event2 = xml_sax::Event::Reference(xml_sax::Reference {
                                     raw: &self.strbuffer[range],
-                                    resolved: &self.strbuffer[range_resolved],
+                                    resolved: Some(&self.strbuffer[range_resolved]),
                                 })
                             }
                             ContentRelaxed::CdataStart => {

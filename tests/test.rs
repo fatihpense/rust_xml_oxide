@@ -1,53 +1,12 @@
 extern crate xml_oxide;
 extern crate xml_sax;
 
-// imports traits.
-use std::io::prelude::*;
-use std::io::BufReader;
-use std::io::BufRead;
-
 use std::char;
-
-use std::rc::Rc;
-use std::cell::RefCell;
 
 use std::time::{Duration, Instant};
 
-use xml_oxide::sax::*;
-
-struct MySaxHandler {
-    pub counter: usize,
-    pub end_counter: usize,
-    pub char_counter: usize,
-}
-
-impl xml_sax::ContentHandler for MySaxHandler {
-    fn start_document(&mut self) {}
-    fn end_document(&mut self) {}
-    fn start_element(
-        &mut self,
-        uri: &str,
-        local_name: &str,
-        qualified_name: &str,
-        attributes: &dyn xml_sax::SAXAttributes,
-    ) {
-        self.counter = self.counter + 1;
-        println!("{}", qualified_name);
-    } //need attributes
-    fn end_element(&mut self, uri: &str, local_name: &str, qualified_name: &str) {
-        self.end_counter += 1;
-        println!("{}", qualified_name);
-    }
-    fn characters(&mut self, characters: &str) {
-        println!("{}", characters);
-    }
-}
-
-impl xml_sax::StatsHandler for MySaxHandler {
-    fn offset(&mut self, offset: usize) {
-        self.char_counter = self.char_counter + offset;
-    }
-}
+use xml_oxide::parser3::OxideParser;
+use xml_sax::EndElement;
 
 // let mut my_sax_handler = MySaxHandler {
 //     counter: 0,
@@ -74,55 +33,8 @@ struct MyCollectorSaxHandler {
     characters_buf: String,
 }
 
-impl xml_sax::ContentHandler for MyCollectorSaxHandler {
-    fn start_document(&mut self) {}
-    fn end_document(&mut self) {}
-    fn start_element(
-        &mut self,
-        uri: &str,
-        local_name: &str,
-        qualified_name: &str,
-        attributes: &dyn xml_sax::SAXAttributes,
-    ) {
-        self.start_counter = self.start_counter + 1;
-        self.start_el_name_vec.push(qualified_name.to_owned());
-
-        for attr in attributes.iter() {
-            println!("iter attr: {}", attr.get_value());
-        }
-
-        if self.characters_buf.len() > 0 {
-            self.characters_collected_vec
-                .push(self.characters_buf.clone());
-            self.characters_buf = String::new();
-        }
-    }
-    fn end_element(&mut self, uri: &str, local_name: &str, qualified_name: &str) {
-        self.end_counter += 1;
-        self.end_el_name_vec.push(qualified_name.to_owned());
-
-        if self.characters_buf.len() > 0 {
-            self.characters_collected_vec
-                .push(self.characters_buf.clone());
-            self.characters_buf = String::new();
-        }
-    }
-    fn characters(&mut self, characters: &str) {
-        // println!("characters: {}", characters);
-        self.characters_buf.push_str(characters);
-    }
-}
-impl xml_sax::StatsHandler for MyCollectorSaxHandler {
-    fn offset(&mut self, offset: usize) {
-        self.char_counter = self.char_counter + offset;
-    }
-}
-
-#[test]
-fn test_basic() {
-    let mut s = String::from("<rootEl><value>5</value></rootEl>");
-    let mut reader = BufReader::new(s.as_bytes());
-    let mut my_sax_handler = MyCollectorSaxHandler {
+fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
+    let mut data = MyCollectorSaxHandler {
         start_counter: 0,
         end_counter: 0,
         char_counter: 0,
@@ -132,25 +44,48 @@ fn test_basic() {
         characters_buf: String::new(),
     };
 
-    let mut sax_parser = SaxParser::new();
+    let mut p = OxideParser::start(f);
 
-    let handler = Rc::new(RefCell::new(my_sax_handler));
-    sax_parser.set_content_handler(handler.clone());
+    loop {
+        let res = p.read_event();
 
-    sax_parser.set_stats_handler(handler.clone());
-    sax_parser.parse(&mut reader);
+        match res {
+            xml_sax::Event::StartElement(el) => {
+                data.start_counter = data.start_counter + 1;
+                data.start_el_name_vec.push(el.name.to_owned());
+                for attr in el.attributes.iter() {}
+            }
+            xml_sax::Event::EndElement(el) => {
+                data.end_counter += 1;
+                data.end_el_name_vec.push(el.name.to_owned());
+            }
+            xml_sax::Event::EndDocument => {
+                break;
+            }
+            xml_sax::Event::Characters(chars) => {
+                data.characters_buf.push_str(chars);
+            }
 
-    assert_eq!(handler.borrow().char_counter, 33);
-    assert_eq!(handler.borrow().start_counter, 2);
-    assert_eq!(handler.borrow().end_counter, 2);
-    assert_eq!(handler.borrow().start_el_name_vec.get(0).unwrap(), "rootEl");
-    println!("{:?}", handler.borrow().characters_collected_vec);
-    assert_eq!(handler.borrow().end_el_name_vec.get(0).unwrap(), "value");
+            _ => {}
+        }
+    }
 
-    assert_eq!(
-        handler.borrow().characters_collected_vec.get(0).unwrap(),
-        "5"
-    );
+    data
+}
+
+#[test]
+fn test_basic() {
+    let mut s = String::from("<rootEl><value>5</value></rootEl>");
+
+    let data = collect_with_parser(s.as_bytes());
+
+    assert_eq!(data.start_counter, 2);
+    assert_eq!(data.end_counter, 2);
+    assert_eq!(data.start_el_name_vec.get(0).unwrap(), "rootEl");
+    println!("{:?}", data.characters_collected_vec);
+    assert_eq!(data.end_el_name_vec.get(0).unwrap(), "value");
+
+    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "5");
     // assert_eq!(my_sax_handler.end, );
 }
 
@@ -165,26 +100,10 @@ fn test_66_EntityRef() {
     assert_eq!(c2, '<'); //8898  &#x022C2;    60 &#x0003C;
 
     let mut s = String::from("<rootEl><value>1&lt;2&#60;3&#x0003C;4</value></rootEl>");
-    let mut reader = BufReader::new(s.as_bytes());
-    let mut my_sax_handler = MyCollectorSaxHandler {
-        start_counter: 0,
-        end_counter: 0,
-        char_counter: 0,
-        start_el_name_vec: Vec::new(),
-        end_el_name_vec: Vec::new(),
-        characters_collected_vec: Vec::new(),
-        characters_buf: String::new(),
-    };
 
-    let mut sax_parser = SaxParser::new();
-    let handler = Rc::new(RefCell::new(my_sax_handler));
-    sax_parser.set_content_handler(handler.clone());
-    sax_parser.parse(&mut reader);
+    let data = collect_with_parser(s.as_bytes());
 
-    assert_eq!(
-        handler.borrow().characters_collected_vec.get(0).unwrap(),
-        "1<2<3<4"
-    );
+    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "1<2<3<4");
     // assert_eq!(my_sax_handler.end, );
 }
 
@@ -194,28 +113,11 @@ fn test_18_CDATA() {
         "<rootEl>1&lt;2&#60;3&#x0003C;4<![CDATA[ \
          1&lt;2&#60;3&#x0003C;4]]><![CDATA[]]></rootEl>",
     );
-    let mut reader = BufReader::new(s.as_bytes());
-    let mut my_sax_handler = MyCollectorSaxHandler {
-        start_counter: 0,
-        end_counter: 0,
-        char_counter: 0,
-        start_el_name_vec: Vec::new(),
-        end_el_name_vec: Vec::new(),
-        characters_collected_vec: Vec::new(),
-        characters_buf: String::new(),
-    };
+    let data = collect_with_parser(s.as_bytes());
 
-    let mut sax_parser = SaxParser::new();
-    let handler = Rc::new(RefCell::new(my_sax_handler));
-    sax_parser.set_content_handler(handler.clone());
-    sax_parser.parse(&mut reader);
-
-    println!(
-        "{}",
-        handler.borrow().characters_collected_vec.get(0).unwrap()
-    );
+    println!("{}", data.characters_collected_vec.get(0).unwrap());
     assert_eq!(
-        handler.borrow().characters_collected_vec.get(0).unwrap(),
+        data.characters_collected_vec.get(0).unwrap(),
         "1<2<3<4 1&lt;2&#60;3&#x0003C;4"
     );
 }
@@ -224,30 +126,10 @@ fn test_18_CDATA() {
 #[test]
 fn test_15_Comment() {
     let mut s = String::from("<rootEl>comments<!--are ignored--><!---->.</rootEl>");
-    let mut reader = BufReader::new(s.as_bytes());
-    let mut my_sax_handler = MyCollectorSaxHandler {
-        start_counter: 0,
-        end_counter: 0,
-        char_counter: 0,
-        start_el_name_vec: Vec::new(),
-        end_el_name_vec: Vec::new(),
-        characters_collected_vec: Vec::new(),
-        characters_buf: String::new(),
-    };
+    let data = collect_with_parser(s.as_bytes());
 
-    let mut sax_parser = SaxParser::new();
-    let handler = Rc::new(RefCell::new(my_sax_handler));
-    sax_parser.set_content_handler(handler.clone());
-    sax_parser.parse(&mut reader);
-
-    println!(
-        "{}",
-        handler.borrow().characters_collected_vec.get(0).unwrap()
-    );
-    assert_eq!(
-        handler.borrow().characters_collected_vec.get(0).unwrap(),
-        "comments."
-    );
+    println!("{}", data.characters_collected_vec.get(0).unwrap());
+    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments.");
 }
 
 #[test]
@@ -257,28 +139,8 @@ fn test_15_Comment_not_well_formed() {
         "<rootEl>comments<!-- are not well formed with 3 \
          hyphen at the end unless it is empty---><!---->.</rootEl>",
     );
-    let mut reader = BufReader::new(s.as_bytes());
-    let mut my_sax_handler = MyCollectorSaxHandler {
-        start_counter: 0,
-        end_counter: 0,
-        char_counter: 0,
-        start_el_name_vec: Vec::new(),
-        end_el_name_vec: Vec::new(),
-        characters_collected_vec: Vec::new(),
-        characters_buf: String::new(),
-    };
+    let data = collect_with_parser(s.as_bytes());
 
-    let mut sax_parser = SaxParser::new();
-    let handler = Rc::new(RefCell::new(my_sax_handler));
-    sax_parser.set_content_handler(handler.clone());
-    sax_parser.parse(&mut reader);
-
-    println!(
-        "{}",
-        handler.borrow().characters_collected_vec.get(0).unwrap()
-    );
-    assert_eq!(
-        handler.borrow().characters_collected_vec.get(0).unwrap(),
-        "comments."
-    );
+    println!("{}", data.characters_collected_vec.get(0).unwrap());
+    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments.");
 }
