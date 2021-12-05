@@ -1940,14 +1940,114 @@ impl<R: Read> OxideParser<R> {
                                     }
                                 }
 
-                                //todo decode
-                                let mut start_elem =
+                                let mut start_element =
                                     convert_start_element(&mut self.strbuffer, event1);
-                                start_elem.is_empty = true;
-                                event2 = xml_sax::Event::StartElement(start_elem);
+                                start_element.is_empty = true;
+                                self.element_level += 1;
+                                //todo decode
 
-                                //todo: add & clear up namespaces
-                                if self.is_namespace_aware {}
+                                if self.is_namespace_aware {
+                                    //first process namespace definitions
+                                    for attr in start_element.attributes.iter_mut() {
+                                        match QName(attr.name.as_bytes()) {
+                                            Ok(qres) => {
+                                                let qname = qres.1;
+
+                                                if qname.prefix == "" && qname.local_name == "xmlns"
+                                                {
+                                                    //set default namespace
+                                                    let ns = push_ns_values_get_ns(
+                                                        &mut self.namespace_strbuffer,
+                                                        "",
+                                                        attr.value,
+                                                        self.element_level,
+                                                    );
+                                                    self.namespace_list.push(ns);
+                                                }
+
+                                                if qname.prefix == "xmlns" {
+                                                    //set prefixed namespace
+                                                    let prefix = qname.local_name;
+                                                    let ns = push_ns_values_get_ns(
+                                                        &mut self.namespace_strbuffer,
+                                                        prefix,
+                                                        attr.value,
+                                                        self.element_level,
+                                                    );
+                                                    self.namespace_list.push(ns);
+                                                }
+                                                attr.local_name = qname.local_name;
+                                                attr.prefix = qname.prefix;
+                                                // let range_local_name = push_str_get_range(
+                                                //     &mut self.strbuffer,
+                                                //     qname.local_name,
+                                                // );
+                                                // attr.local_name = &self.strbuffer[range_local_name];
+                                            }
+                                            Err(e) => {
+                                                panic!("attribute not conforming QName spec")
+                                            }
+                                        }
+                                    }
+
+                                    for attr in start_element.attributes.iter_mut() {
+                                        //Default namespace doesn't apply to attributes
+                                        if attr.prefix == "" {
+                                            continue;
+                                        }
+                                        match self.namespace_list.iter().rfind(|ns| {
+                                            &self.namespace_strbuffer[ns.prefix.clone()]
+                                                == attr.prefix
+                                        }) {
+                                            Some(ns) => {
+                                                attr.namespace =
+                                                    &self.namespace_strbuffer[ns.value.clone()]
+                                            }
+                                            None => {
+                                                panic!("Namespace prefix not found")
+                                            }
+                                        }
+                                    }
+
+                                    //resolve namespaces for element and attributes.
+
+                                    match QName(start_element.name.as_bytes()) {
+                                        Ok(qres) => {
+                                            let qname = qres.1;
+                                            start_element.local_name = qname.local_name;
+                                            start_element.prefix = qname.prefix;
+
+                                            match self.namespace_list.iter().rfind(|ns| {
+                                                &self.namespace_strbuffer[ns.prefix.clone()]
+                                                    == start_element.prefix
+                                            }) {
+                                                Some(ns) => {
+                                                    start_element.namespace =
+                                                        &self.namespace_strbuffer[ns.value.clone()]
+                                                }
+
+                                                None => {
+                                                    if start_element.prefix == "" {
+                                                        //it is fine
+                                                    } else {
+                                                        panic!("Namespace prefix not found for element: {}",start_element.name)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            panic!("element name not conforming QName spec")
+                                        }
+                                    }
+                                }
+
+                                event2 = xml_sax::Event::StartElement(start_element);
+
+                                self.element_level -= 1;
+                                if self.element_level == 0 {
+                                    //could be a root only document.
+                                    self.state = ParserState::DocEnd;
+                                }
 
                                 //add endelement after this? no..?
                             }
