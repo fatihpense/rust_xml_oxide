@@ -1537,7 +1537,7 @@ fn push_ns_values_get_ns(
     value: &str,
     element_level: usize,
 ) -> Namespace {
-    let range_prefix = push_str_get_range(namespace_strbuffer, "");
+    let range_prefix = push_str_get_range(namespace_strbuffer, prefix);
     let range_value = push_str_get_range(namespace_strbuffer, value);
     Namespace {
         level: element_level,
@@ -1546,7 +1546,6 @@ fn push_ns_values_get_ns(
     }
 }
 
-impl<R: Read> OxideParser<R> {
 use thiserror::Error;
 
 pub type SaxResult<T> = Result<T, SaxError>;
