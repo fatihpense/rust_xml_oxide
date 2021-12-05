@@ -5,6 +5,8 @@ use std::{
     vec,
 };
 
+use crate::sax as xml_sax;
+
 use nom::{
     branch::alt,
     bytes::streaming::{escaped, is_not, tag, take_while, take_while1},

@@ -1,12 +1,10 @@
 extern crate xml_oxide;
-extern crate xml_sax;
+
+use xml_oxide::{parser::OxideParser, sax::Event};
 
 use std::char;
 
 use std::time::{Duration, Instant};
-
-use xml_oxide::parser3::OxideParser;
-use xml_sax::EndElement;
 
 // let mut my_sax_handler = MySaxHandler {
 //     counter: 0,
@@ -50,19 +48,19 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
         let res = p.read_event();
 
         match res {
-            xml_sax::Event::StartElement(el) => {
+            Event::StartElement(el) => {
                 data.start_counter = data.start_counter + 1;
                 data.start_el_name_vec.push(el.name.to_owned());
                 for attr in el.attributes.iter() {}
             }
-            xml_sax::Event::EndElement(el) => {
+            Event::EndElement(el) => {
                 data.end_counter += 1;
                 data.end_el_name_vec.push(el.name.to_owned());
             }
-            xml_sax::Event::EndDocument => {
+            Event::EndDocument => {
                 break;
             }
-            xml_sax::Event::Characters(chars) => {
+            Event::Characters(chars) => {
                 data.characters_buf.push_str(chars);
             }
 

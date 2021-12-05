@@ -1,9 +1,8 @@
 extern crate xml_oxide;
-extern crate xml_sax;
 
 use std::fs::File;
 
-use xml_oxide::parser3::OxideParser;
+use xml_oxide::{parser::OxideParser, sax::Event};
 
 #[test]
 fn books_attributes() {
@@ -22,7 +21,7 @@ fn books_attributes() {
         let res = p.read_event();
 
         match res {
-            xml_sax::Event::StartElement(el) => {
+            Event::StartElement(el) => {
                 for attr in el.attributes.iter() {
                     //println!("{}->{}", attr.get_qualified_name(), attr.get_value());
                     attributes_string.push_str(attr.name);
@@ -54,7 +53,7 @@ fn books_attributes() {
                     }
                 }
             }
-            xml_sax::Event::EndDocument => {
+            Event::EndDocument => {
                 break;
             }
 

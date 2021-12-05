@@ -1,6 +1,6 @@
 [package]
 name = "xml_oxide"
-version = "0.0.9"
+version = "0.1.0"
 authors = ["Fatih Pense <fatihpense@gmail.com>"]
 
 description = "XML parser implementation for SAX interface: xml_sax"
@@ -11,6 +11,4 @@ license = "MIT"
 edition = "2021"
 
 [dependencies]
-xml_sax = "0.0.6"
-itertools = "0.7.6"
 nom = "7"

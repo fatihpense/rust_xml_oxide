@@ -1,9 +1,8 @@
 use std::fs::File;
 
-use xml_oxide::parser3::OxideParser;
+use xml_oxide::{parser::OxideParser, sax::Event};
 
 extern crate xml_oxide;
-extern crate xml_sax;
 
 #[test]
 fn newer_parser() {
@@ -21,7 +20,7 @@ fn newer_parser() {
         // println!("{:?}", res);
         result.push_str(&format!("{:?}\n", res));
         match res {
-            xml_sax::Event::EndDocument => {
+            Event::EndDocument => {
                 break;
             }
             _ => {}
@@ -83,16 +82,16 @@ fn newer_parser_commentcdata() {
         let res = p.read_event();
 
         match res {
-            xml_sax::Event::EndDocument => {
+            Event::EndDocument => {
                 break;
             }
-            xml_sax::Event::StartComment => {
+            Event::StartComment => {
                 inside_comment = true;
             }
-            xml_sax::Event::EndComment => {
+            Event::EndComment => {
                 inside_comment = false;
             }
-            xml_sax::Event::Characters(c) => {
+            Event::Characters(c) => {
                 if inside_comment {
                     comments.push_str(c);
                     comments.push_str(",");
@@ -102,10 +101,10 @@ fn newer_parser_commentcdata() {
                     cdatas.push_str(",");
                 }
             }
-            xml_sax::Event::StartCdataSection => {
+            Event::StartCdataSection => {
                 inside_cdata = true;
             }
-            xml_sax::Event::EndCdataSection => {
+            Event::EndCdataSection => {
                 inside_cdata = false;
             }
 

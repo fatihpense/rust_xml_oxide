@@ -1,9 +1,8 @@
 extern crate xml_oxide;
-extern crate xml_sax;
 
 use std::fs::File;
 
-use xml_oxide::parser3::OxideParser;
+use xml_oxide::{parser::OxideParser, sax::Event};
 
 #[test]
 fn test_namespaces() {
@@ -22,7 +21,7 @@ fn test_namespaces() {
         let res = p.read_event();
 
         match res {
-            xml_sax::Event::StartElement(el) => {
+            Event::StartElement(el) => {
                 element_namespace_data.push_str(el.name);
                 element_namespace_data.push_str("->");
                 element_namespace_data.push_str(el.namespace);
@@ -36,7 +35,7 @@ fn test_namespaces() {
                     attribute_namespace_data.push_str(",");
                 }
             }
-            xml_sax::Event::EndDocument => {
+            Event::EndDocument => {
                 break;
             }
 
