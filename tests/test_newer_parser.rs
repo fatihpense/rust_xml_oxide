@@ -26,7 +26,7 @@ fn newer_parser() {
                 }
                 _ => {}
             },
-            Err(err) => {
+            Err(_err) => {
                 break;
             }
         }
@@ -116,7 +116,7 @@ fn newer_parser_commentcdata() {
                 _ => {}
             },
 
-            Err(err) => {
+            Err(_err) => {
                 break;
             }
         }

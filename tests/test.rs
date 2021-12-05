@@ -65,7 +65,7 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
 
                 _ => {}
             },
-            Err(err) => {
+            Err(_err) => {
                 break;
             }
         }

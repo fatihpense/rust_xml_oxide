@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use std::{
     io::{BufRead, BufReader, Read},
-    ops::{Range, RangeFrom, RangeFull},
+    ops::Range,
     vec,
 };
 
@@ -9,22 +9,21 @@ use crate::sax as xml_sax;
 
 use nom::{
     branch::alt,
-    bytes::streaming::{escaped, is_not, tag, take_while, take_while1},
+    bytes::streaming::{is_not, tag, take_while1},
     character::{
-        complete::{alphanumeric1 as alphanumeric, char, multispace1, none_of, one_of},
+        complete::{char, multispace1},
         is_digit, is_hex_digit,
         streaming::{alpha1, alphanumeric1, digit1, multispace0},
     },
-    combinator::{cut, map, map_res, opt, recognize, value},
-    error::{
-        context, convert_error, dbg_dmp, ContextError, Error, ErrorKind, ParseError, VerboseError,
-    },
-    error_position,
-    multi::{many0, many1, separated_list0},
-    number::complete::double,
+    combinator::{map, opt, recognize},
+    error::{Error, ErrorKind, ParseError},
+    multi::many0,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    AsChar, Err, IResult, InputIter, InputLength, Needed, Offset, Parser, Slice,
+    Err, IResult, InputLength, Needed, Offset, Parser,
 };
+
+#[allow(unused_imports)]
+use nom::error_position;
 
 // https://tools.ietf.org/html/rfc3629
 static UTF8_CHAR_WIDTH: [u8; 256] = [
@@ -824,9 +823,9 @@ fn XMLDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
 //     recognize(alt((multispace1,)))(input)
 // }
 
-fn docstart_custom(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(tuple((XMLDecl, multispace0)))(input)
-}
+// fn docstart_custom(input: &[u8]) -> IResult<&[u8], &[u8]> {
+//     recognize(tuple((XMLDecl, multispace0)))(input)
+// }
 
 #[test]
 fn test_XMLDecl() {
@@ -995,6 +994,7 @@ fn inside_CDATASection_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
     inside_Comment_or_CDATA_single_pure(input)
 }
 
+#[allow(dead_code)]
 fn CDATASection(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
         CDATASection_start,

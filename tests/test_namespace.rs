@@ -45,7 +45,7 @@ fn test_namespaces() {
                 }
             }
 
-            Err(err) => {
+            Err(_err) => {
                 break;
             }
         }
