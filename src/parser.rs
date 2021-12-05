@@ -200,8 +200,8 @@ where
                 Err(Err::Error(_)) => return Ok((i, ())),
                 // Err(e) => return Err(e),
                 // ref#streamcut
-                Err(e) => return Ok((i, ())),
-                Ok((i1, o)) => {
+                Err(_e) => return Ok((i, ())),
+                Ok((i1, _o)) => {
                     // infinite loop check: the parser must always consume
                     if i1.input_len() == len {
                         return Err(Err::Error(E::from_error_kind(i, ErrorKind::Many0)));
@@ -228,7 +228,7 @@ where
                 Err(Err::Error(_)) => return Ok((i, ())),
                 Err(e) => return Err(e), //returns incomplete here
                 // Err(e) => return Ok((i, ())),
-                Ok((i1, o)) => {
+                Ok((i1, _o)) => {
                     // infinite loop check: the parser must always consume
                     if i1.input_len() == len {
                         return Err(Err::Error(E::from_error_kind(i, ErrorKind::Many0)));
@@ -251,7 +251,7 @@ where
     move |mut i: I| match f.parse(i.clone()) {
         Err(Err::Error(err)) => Err(Err::Error(E::append(i, ErrorKind::Many1, err))),
         Err(e) => Err(e),
-        Ok((i1, o)) => {
+        Ok((i1, _o)) => {
             i = i1;
 
             loop {
@@ -259,7 +259,7 @@ where
                 match f.parse(i.clone()) {
                     Err(Err::Error(_)) => return Ok((i, ())),
                     Err(e) => return Err(e),
-                    Ok((i1, o)) => {
+                    Ok((i1, _o)) => {
                         // infinite loop check: the parser must always consume
                         if i1.input_len() == len {
                             return Err(Err::Error(E::from_error_kind(i, ErrorKind::Many1)));
@@ -525,8 +525,8 @@ fn CharData_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
     // ']]>' should not appear in the chardata, if we can't be sure because input is eof, we should request more data.
     match tag::<&str, &[u8], Error<&[u8]>>("]]>")(input) {
-        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
-        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        Ok(_r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(_n)) => return Err(Err::Incomplete(Needed::Unknown)),
         _ => (),
     };
     CharData_single_pure(input)
@@ -534,7 +534,7 @@ fn CharData_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
 #[test]
 fn test_chardata_single() {
-    let data = "]]".as_bytes();
+    let _data = "]]".as_bytes();
 
     assert_eq!(
         CharData_single("]".as_bytes()),
@@ -884,8 +884,8 @@ fn inside_Comment_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
     // '--' should not appear in the comment, if we can't be sure because input is eof, we should request more data.
     match tag::<&str, &[u8], Error<&[u8]>>("--")(input) {
-        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
-        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::new(1))),
+        Ok(_r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(_n)) => return Err(Err::Incomplete(Needed::new(1))),
         _ => (),
     };
     inside_Comment_or_CDATA_single_pure(input)
@@ -987,8 +987,8 @@ fn inside_CDATASection_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
     // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
     match tag::<&str, &[u8], Error<&[u8]>>("]]>")(input) {
-        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
-        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        Ok(_r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(_n)) => return Err(Err::Incomplete(Needed::Unknown)),
         _ => (),
     };
     inside_Comment_or_CDATA_single_pure(input)
@@ -1046,8 +1046,8 @@ fn inside_PI_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
     // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
     match tag::<&str, &[u8], Error<&[u8]>>("?>")(input) {
-        Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
-        Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+        Ok(_r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        Err(Err::Incomplete(_n)) => return Err(Err::Incomplete(Needed::Unknown)),
         _ => (),
     };
     inside_Comment_or_CDATA_single_pure(input)
@@ -1239,14 +1239,14 @@ fn misc(input: &[u8]) -> IResult<&[u8], Misc> {
     alt((
         map(PI, |a| Misc::PI(a)),
         map(multispace1, |a| Misc::Whitespace(a)),
-        map(Comment_start, |a| Misc::CommentStart),
+        map(Comment_start, |_a| Misc::CommentStart),
     ))(input)
 }
 fn misc_before_doctype(input: &[u8]) -> IResult<&[u8], MiscBeforeDoctype> {
     alt((
         map(PI, |a| MiscBeforeDoctype::PI(a)),
         map(multispace1, |a| MiscBeforeDoctype::Whitespace(a)),
-        map(Comment_start, |a| MiscBeforeDoctype::CommentStart),
+        map(Comment_start, |_a| MiscBeforeDoctype::CommentStart),
         map(doctypedecl, |a| MiscBeforeDoctype::DocType(a)),
     ))(input)
 }
@@ -1255,7 +1255,7 @@ fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
         map(XMLDecl, |a| MiscBeforeXmlDecl::XmlDecl(a)), // currently PI can also match XMLDecl so this is first choice
         map(PI, |a| MiscBeforeXmlDecl::PI(a)),
         map(multispace1, |a| MiscBeforeXmlDecl::Whitespace(a)),
-        map(Comment_start, |a| MiscBeforeXmlDecl::CommentStart),
+        map(Comment_start, |_a| MiscBeforeXmlDecl::CommentStart),
         map(doctypedecl, |a| MiscBeforeXmlDecl::DocType(a)),
     ))(input)
 }
@@ -1581,19 +1581,23 @@ impl<R: Read> OxideParser<R> {
 
     fn read_data(&mut self) -> Result<(), std::io::Error> {
         match self.bufreader.fill_buf() {
-            Ok(ok) => {}
+            Ok(_ok) => {}
             Err(err) => return Err(err),
         }
-        let data2 = self.bufreader.buffer();
 
-        self.buffer2.extend_from_slice(data2);
+        let amt: usize;
+        {
+            let data2 = self.bufreader.buffer();
 
-        self.bufreader.consume(data2.len());
+            self.buffer2.extend_from_slice(data2);
+            amt = data2.len();
+        }
+        self.bufreader.consume(amt);
         Ok(())
     }
 
     // , buf: &'b [u8]
-    pub fn read_event<'a, 'b, 'c>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
+    pub fn read_event<'a>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
         // self.bufreader.consume(self.offset);
         self.buffer2.drain(0..self.offset);
         self.offset = 0;
@@ -1652,7 +1656,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         //try content!
                         self.state = ParserState::Content;
                         return self.read_event();
@@ -1692,7 +1696,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         //try content!
                         self.state = ParserState::Content;
                         return self.read_event();
@@ -1721,7 +1725,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         return Err(SaxError::Parsing(
                             "Expected Comment content or Comment end".to_owned(),
                         ))
@@ -1753,7 +1757,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         //try content!
                         self.state = ParserState::Content;
                         return self.read_event();
@@ -1782,7 +1786,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         return Err(SaxError::Parsing(format!(
                             "Expecting comment content or comment closing tag "
                         )))
@@ -1882,7 +1886,7 @@ impl<R: Read> OxideParser<R> {
                                                 // );
                                                 // attr.local_name = &self.strbuffer[range_local_name];
                                             }
-                                            Err(e) => {
+                                            Err(_e) => {
                                                 return Err(SaxError::Parsing(format!(
                                                     "Attribute does not conform to QName spec: {}",
                                                     attr.name
@@ -1938,7 +1942,7 @@ impl<R: Read> OxideParser<R> {
                                                 }
                                             }
                                         }
-                                        Err(e) => {
+                                        Err(_e) => {
                                             return Err(SaxError::Parsing(format!(
                                                 "Element name does not conform to QName spec: {}",
                                                 start_element.name
@@ -2017,7 +2021,7 @@ impl<R: Read> OxideParser<R> {
                                                 // );
                                                 // attr.local_name = &self.strbuffer[range_local_name];
                                             }
-                                            Err(e) => {
+                                            Err(_e) => {
                                                 return Err(SaxError::Parsing(format!(
                                                     "Attribute does not conform to QName spec: {}",
                                                     attr.name
@@ -2077,7 +2081,7 @@ impl<R: Read> OxideParser<R> {
                                                 }
                                             }
                                         }
-                                        Err(e) => {
+                                        Err(_e) => {
                                             return Err(SaxError::Parsing(format!(
                                                 "Element name does not conform to QName spec: {}",
                                                 start_element.name
@@ -2192,7 +2196,7 @@ impl<R: Read> OxideParser<R> {
                                                 }
                                             }
                                         }
-                                        Err(e) => {
+                                        Err(_e) => {
                                             return Err(SaxError::Parsing(format!(
                                                 "Element name does not conform to QName spec: {}",
                                                 end_element.name
@@ -2241,7 +2245,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(Err::Incomplete(e)) => {
+                    Err(Err::Incomplete(_e)) => {
                         let ending = String::from_utf8_lossy(&self.buffer2);
 
                         return Err(SaxError::Parsing(format!(
@@ -2249,7 +2253,7 @@ impl<R: Read> OxideParser<R> {
                             ending
                         )));
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         let ending = String::from_utf8_lossy(&self.buffer2);
                         let ending_truncated = match ending.char_indices().nth(50) {
                             None => &ending,
@@ -2286,7 +2290,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         return Err(SaxError::Parsing(format!(
                             "Expecting CDATA content or CDATA closing tag "
                         )))
@@ -2315,7 +2319,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         return Err(SaxError::Parsing(format!(
                             "Expecting comment content or comment closing tag "
                         )))
@@ -2351,7 +2355,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         return Err(SaxError::Parsing(format!(
                             "Unexpected entity/content at the end of the document."
                         )))
@@ -2380,7 +2384,7 @@ impl<R: Read> OxideParser<R> {
                             }
                         }
                     }
-                    Err(err) => {
+                    Err(_err) => {
                         return Err(SaxError::Parsing(format!(
                             "Expecting comment content or comment closing tag "
                         )))
@@ -2410,14 +2414,14 @@ fn test_parser1() {
                 xml_sax::Event::EndDocument => {
                     break;
                 }
-                xml_sax::Event::StartElement(el) => {}
+                xml_sax::Event::StartElement(_el) => {}
                 xml_sax::Event::EndElement(_) => {}
-                xml_sax::Event::Characters(c) => {}
-                xml_sax::Event::Reference(c) => {}
+                xml_sax::Event::Characters(_c) => {}
+                xml_sax::Event::Reference(_c) => {}
                 _ => {}
             },
 
-            Err(err) => {
+            Err(_err) => {
                 break;
             }
         }

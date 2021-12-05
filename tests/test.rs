@@ -21,7 +21,6 @@ use std::char;
 struct MyCollectorSaxHandler {
     start_counter: usize,
     end_counter: usize,
-    char_counter: usize,
     start_el_name_vec: Vec<String>,
     end_el_name_vec: Vec<String>,
     // characters should be collected because SAX parser can send them splitted for various reasons.
@@ -33,7 +32,6 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
     let mut data = MyCollectorSaxHandler {
         start_counter: 0,
         end_counter: 0,
-        char_counter: 0,
         start_el_name_vec: Vec::new(),
         end_el_name_vec: Vec::new(),
         characters_collected_vec: Vec::new(),
@@ -91,7 +89,7 @@ fn test_basic() {
 }
 
 #[test]
-fn test_66_EntityRef() {
+fn test_66_entity_ref() {
     let c = char::from_u32(60).unwrap();
     // println!("{}", c);
     assert_eq!(c, '<'); //8898  &#x022C2;    60 &#x0003C;
@@ -109,7 +107,7 @@ fn test_66_EntityRef() {
 }
 
 #[test]
-fn test_18_CDATA() {
+fn test_18_cdata() {
     let s = String::from(
         "<rootEl>1&lt;2&#60;3&#x0003C;4<![CDATA[ \
          1&lt;2&#60;3&#x0003C;4]]><![CDATA[]]></rootEl>",
@@ -125,7 +123,7 @@ fn test_18_CDATA() {
 
 // comments should be ignored in content handler
 #[test]
-fn test_15_Comment() {
+fn test_15_comment() {
     let s = String::from("<rootEl>comments<!--are ignored--><!---->.</rootEl>");
     let data = collect_with_parser(s.as_bytes());
 
@@ -135,7 +133,7 @@ fn test_15_Comment() {
 
 #[test]
 #[should_panic]
-fn test_15_Comment_not_well_formed() {
+fn test_15_comment_not_well_formed() {
     let s = String::from(
         "<rootEl>comments<!-- are not well formed with 3 \
          hyphen at the end unless it is empty---><!---->.</rootEl>",
