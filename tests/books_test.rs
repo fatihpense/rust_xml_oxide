@@ -2,7 +2,7 @@ extern crate xml_oxide;
 
 use std::fs::File;
 
-use xml_oxide::{parser::Parser, sax::Event};
+use xml_oxide::{sax::parser::Parser, sax::Event};
 
 #[test]
 fn books_attributes() {
@@ -13,7 +13,7 @@ fn books_attributes() {
             panic!("file error");
         }
     };
-    let mut p = Parser::start(f);
+    let mut p = Parser::from_reader(f);
     let mut attributes_string: String = String::new();
     let mut book_element_attributes: String = String::new();
 

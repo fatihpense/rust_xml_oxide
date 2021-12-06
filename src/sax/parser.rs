@@ -1,12 +1,12 @@
 use nom::Offset;
 
 use crate::{
-    internal::{
+    sax as xml_sax,
+    sax::internal::{
         content_relaxed, insidecdata, insidecomment, misc, misc_before_doctype,
         misc_before_xmldecl, ContentRelaxed, InsideCdata, InsideComment, Misc, MiscBeforeDoctype,
         MiscBeforeXmlDecl, QName, SAXAttribute2,
     },
-    sax as xml_sax,
 };
 
 use std::{
@@ -58,7 +58,7 @@ pub struct Parser<R: Read> {
 
 fn convert_start_element<'a>(
     strbuffer: &'a mut String,
-    event1: crate::internal::StartElement,
+    event1: crate::sax::internal::StartElement,
 ) -> xml_sax::StartElement<'a> {
     let start = strbuffer.len();
     let size = event1.name.len();
@@ -158,7 +158,7 @@ mod error {
 }
 
 impl<R: Read> Parser<R> {
-    pub fn start(reader: R) -> Parser<R> {
+    pub fn from_reader(reader: R) -> Parser<R> {
         Parser {
             state: ParserState::Initial,
             bufreader: BufReader::with_capacity(8192, reader),
@@ -1048,7 +1048,7 @@ fn test_parser1() {
         .as_bytes();
 
     // let mut buf = vec![];
-    let mut p = Parser::start(data);
+    let mut p = Parser::from_reader(data);
     loop {
         let res = p.read_event();
         println!("{:?}", res);

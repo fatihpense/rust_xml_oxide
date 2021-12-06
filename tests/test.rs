@@ -1,6 +1,6 @@
 extern crate xml_oxide;
 
-use xml_oxide::{parser::Parser, sax::Event};
+use xml_oxide::{sax::parser::Parser, sax::Event};
 
 use std::char;
 
@@ -38,7 +38,7 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
         characters_buf: String::new(),
     };
 
-    let mut p = Parser::start(f);
+    let mut p = Parser::from_reader(f);
 
     loop {
         let res = p.read_event();

@@ -2,7 +2,7 @@ extern crate xml_oxide;
 
 use std::fs::File;
 
-use xml_oxide::{parser::Parser, sax::Event};
+use xml_oxide::{sax::parser::Parser, sax::Event};
 
 #[test]
 fn test_namespaces() {
@@ -13,7 +13,7 @@ fn test_namespaces() {
             panic!("file error");
         }
     };
-    let mut p = Parser::start(f);
+    let mut p = Parser::from_reader(f);
     let mut element_namespace_data: String = String::new();
     let mut attribute_namespace_data: String = String::new();
 

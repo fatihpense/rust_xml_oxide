@@ -1,5 +1,5 @@
 use std::fs::File;
-use xml_oxide::{parser::Parser, sax::Event};
+use xml_oxide::{sax::parser::Parser, sax::Event};
 
 #[test]
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
 
     let f = File::open("./tests/xml_files/books.xml").unwrap();
 
-    let mut p = Parser::start(f);
+    let mut p = Parser::from_reader(f);
 
     loop {
         let res = p.read_event();

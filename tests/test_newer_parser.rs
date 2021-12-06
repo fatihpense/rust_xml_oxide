@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use xml_oxide::{parser::Parser, sax::Event};
+use xml_oxide::{sax::parser::Parser, sax::Event};
 
 extern crate xml_oxide;
 
@@ -13,7 +13,7 @@ fn newer_parser_1() {
             panic!("file error");
         }
     };
-    let mut p = Parser::start(f);
+    let mut p = Parser::from_reader(f);
     let mut result: String = String::new();
     loop {
         let res = p.read_event();
@@ -82,7 +82,7 @@ fn newer_parser_commentcdata() {
             panic!("file error");
         }
     };
-    let mut p = Parser::start(f);
+    let mut p = Parser::from_reader(f);
     let mut comments: String = String::new();
     let mut cdatas: String = String::new();
 
