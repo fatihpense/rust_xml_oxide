@@ -102,7 +102,7 @@ fn newer_parser_commentcdata() {
                 Event::EndComment => {
                     inside_comment = false;
                 }
-                Event::Characters(c) => {}
+                Event::Characters(_c) => {}
                 Event::Comment(c) => {
                     if inside_comment {
                         comments.push_str(c);

@@ -4,12 +4,19 @@
 
 Rust XML parser implementation that parses any well-formed XML defined in the [W3C Spec](https://www.w3.org/TR/xml/) in a streaming way.
 
+If you want to use `xml_sax` interface to implement another parser we can discuss to improve the interface. Currently it is integrated to this crate.
+
+## To Do
+
+- Because the [namespace spec](https://www.w3.org/TR/xml-names/) brings constraints around the usage of ":" in names. Provide `namespace-aware=false` option to parse otherwise valid XML 1.0 documents .
+
 ## Features
 
 - It uses constant-like memory for large XML files
+- Supports [Namespaces in XML 1.0](https://www.w3.org/TR/xml-names/)
 - It only supports UTF-8 encoding
-- It is a non-validating parser
-- It ignores well-formedness in Processing Instructions(DTD), DOCTYPE and parses them as raw strings
+- It is a non-validating parser, it does important well-formedness checks
+- It ignores well-formedness in Processing Instructions, DTD, DOCTYPE and parses them as raw strings
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
 - If you have an element tag or DOCTYPE declaration that is bigger than buffer size(currently default 8KB), it can fail

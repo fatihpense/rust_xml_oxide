@@ -2,12 +2,15 @@
 name = "xml_oxide"
 version = "0.1.1"
 authors = ["Fatih Pense <fatihpense@gmail.com>"]
+license = "MIT"
 
-description = "XML parser implementation for SAX interface: xml_sax"
+description = "XML SAX parser implementation that parses any well-formed XML defined in the W3C Spec"
 repository = "https://github.com/fatihpense/rust_xml_oxide"
+documentation = "https://docs.rs/xml_oxide/"
+
 keywords = ["XML", "SAX", "parser"]
 categories = ["parsing", "parser-implementations"]
-license = "MIT"
+
 edition = "2021"
 
 [dependencies]
