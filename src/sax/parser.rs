@@ -9,13 +9,16 @@ use crate::{
     },
 };
 
-enum InternalSuccess {
-    ContentRelaxed,
-    InsideCdata,
-    InsideComment,
-    Misc,
-    MiscBeforeDoctype,
-    MiscBeforeXmlDecl,
+enum InternalSuccess<'a> {
+    StartDocument,
+    EndDocument,
+
+    ContentRelaxed(ContentRelaxed<'a>),
+    InsideCdata(InsideCdata<'a>),
+    InsideComment(InsideComment<'a>),
+    Misc(Misc<'a>),
+    MiscBeforeDoctype(MiscBeforeDoctype<'a>),
+    MiscBeforeXmlDecl(MiscBeforeXmlDecl<'a>),
 }
 
 use std::{
@@ -164,6 +167,9 @@ mod error {
         // Generic
         #[error("SAX Parsing Err: {0}")]
         Parsing(String),
+
+        #[error("SAX Parsing Err: {0}")]
+        UnexpectedEof(String),
     }
 }
 
@@ -188,29 +194,571 @@ fn read_data_splitted<R: Read>(
     Ok(())
 }
 
-fn read_event_splitted<'a, R: Read>(
+//todo move all states to read_event_splitted
+//todo? simplify the enum here to remove duplicates,then we move complexity to read_event method
+fn event_converter<'a, 'b>(
+    mut state: ParserState,
+    internal_event: InternalSuccess<'b>,
+    buffer2: &'b Vec<u8>,
+
+    element_list: &mut Vec<Range<usize>>,
+    mut strbuffer: &'a mut String,
+    mut namespace_strbuffer: &'a mut String,
+    namespace_list: &mut Vec<Namespace>,
+
+    is_namespace_aware: bool,
+    mut element_level: usize,
+    mut element_strbuffer: &mut String,
+) -> SaxResult<(xml_sax::Event<'a>, ParserState, usize)> {
+    let event = match internal_event {
+        InternalSuccess::StartDocument => xml_sax::Event::StartDocument,
+        InternalSuccess::EndDocument => xml_sax::Event::EndDocument,
+        InternalSuccess::ContentRelaxed(cr) => match cr {
+            ContentRelaxed::CharData(event1) => {
+                let start = strbuffer.len();
+                let size = event1.len();
+                strbuffer.push_str(unsafe { std::str::from_utf8_unchecked(event1) });
+                xml_sax::Event::Characters(&strbuffer[start..(start + size)])
+            }
+            ContentRelaxed::StartElement(event1) => {
+                //todo decode
+
+                if is_namespace_aware {
+                    // clear up namespaces
+                    match namespace_list
+                        .iter()
+                        .rposition(|ns| ns.level <= element_level)
+                    {
+                        Some(pos) => {
+                            if let Some(starting_pos) =
+                                namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
+                            {
+                                namespace_list.truncate(pos + 1);
+                                namespace_strbuffer.truncate(starting_pos);
+                            }
+                        }
+                        None => {
+                            // nothing to remove
+                        }
+                    }
+                }
+
+                let mut start_element = convert_start_element(strbuffer, event1);
+                element_level += 1;
+
+                //add element to list for expected tags check
+
+                let range = push_str_get_range(&mut element_strbuffer, start_element.name);
+                element_list.push(range);
+                // add namespaces
+                if is_namespace_aware {
+                    //first process namespace definitions
+                    for attr in start_element.attributes.iter_mut() {
+                        match QName(attr.name.as_bytes()) {
+                            Ok(qres) => {
+                                let qname = qres.1;
+
+                                if qname.prefix == "" && qname.local_name == "xmlns" {
+                                    //set default namespace
+                                    let ns = push_ns_values_get_ns(
+                                        &mut namespace_strbuffer,
+                                        "",
+                                        attr.value,
+                                        element_level,
+                                    );
+                                    namespace_list.push(ns);
+                                }
+
+                                if qname.prefix == "xmlns" {
+                                    //set prefixed namespace
+                                    let prefix = qname.local_name;
+                                    let ns = push_ns_values_get_ns(
+                                        &mut namespace_strbuffer,
+                                        prefix,
+                                        attr.value,
+                                        element_level,
+                                    );
+                                    namespace_list.push(ns);
+                                }
+                                attr.local_name = qname.local_name;
+                                attr.prefix = qname.prefix;
+                                // let range_local_name = push_str_get_range(
+                                //     &mut strbuffer,
+                                //     qname.local_name,
+                                // );
+                                // attr.local_name = &strbuffer[range_local_name];
+                            }
+                            Err(_e) => {
+                                return Err(error::Error::Parsing(format!(
+                                    "Attribute does not conform to QName spec: {}",
+                                    attr.name
+                                )))
+                            }
+                        }
+                    }
+
+                    for attr in start_element.attributes.iter_mut() {
+                        //Default namespace doesn't apply to attributes
+                        if attr.prefix == "" || attr.prefix == "xmlns" {
+                            continue;
+                        }
+                        match namespace_list
+                            .iter()
+                            .rfind(|ns| &namespace_strbuffer[ns.prefix.clone()] == attr.prefix)
+                        {
+                            Some(ns) => attr.namespace = &namespace_strbuffer[ns.value.clone()],
+                            None => {
+                                return Err(error::Error::Parsing(format!(
+                                "Namespace not found for prefix: {} , attribute: {} , element: {}",
+                                attr.prefix, attr.name, start_element.name
+                            )))
+                            }
+                        }
+                    }
+
+                    //resolve namespaces for element and attributes.
+
+                    match QName(start_element.name.as_bytes()) {
+                        Ok(qres) => {
+                            let qname = qres.1;
+                            start_element.local_name = qname.local_name;
+                            start_element.prefix = qname.prefix;
+
+                            match namespace_list.iter().rfind(|ns| {
+                                &namespace_strbuffer[ns.prefix.clone()] == start_element.prefix
+                            }) {
+                                Some(ns) => {
+                                    start_element.namespace = &namespace_strbuffer[ns.value.clone()]
+                                }
+
+                                None => {
+                                    if start_element.prefix == "" {
+                                        //it is fine
+                                    } else {
+                                        return Err(error::Error::Parsing(format!(
+                                            "Namespace prefix not found for element: {}",
+                                            start_element.name
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            return Err(error::Error::Parsing(format!(
+                                "Element name does not conform to QName spec: {}",
+                                start_element.name
+                            )))
+                        }
+                    }
+                }
+
+                xml_sax::Event::StartElement(start_element)
+            }
+            ContentRelaxed::EmptyElemTag(event1) => {
+                if is_namespace_aware {
+                    // clear up namespaces
+                    match namespace_list
+                        .iter()
+                        .rposition(|ns| ns.level <= element_level)
+                    {
+                        Some(pos) => {
+                            if let Some(starting_pos) =
+                                namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
+                            {
+                                namespace_list.truncate(pos + 1);
+                                namespace_strbuffer.truncate(starting_pos);
+                            }
+                        }
+                        None => {
+                            // nothing to remove
+                        }
+                    }
+                }
+
+                let mut start_element = convert_start_element(strbuffer, event1);
+                start_element.is_empty = true;
+                element_level += 1;
+                //todo decode
+
+                if is_namespace_aware {
+                    //first process namespace definitions
+                    for attr in start_element.attributes.iter_mut() {
+                        match QName(attr.name.as_bytes()) {
+                            Ok(qres) => {
+                                let qname = qres.1;
+
+                                if qname.prefix == "" && qname.local_name == "xmlns" {
+                                    //set default namespace
+                                    let ns = push_ns_values_get_ns(
+                                        &mut namespace_strbuffer,
+                                        "",
+                                        attr.value,
+                                        element_level,
+                                    );
+                                    namespace_list.push(ns);
+                                }
+
+                                if qname.prefix == "xmlns" {
+                                    //set prefixed namespace
+                                    let prefix = qname.local_name;
+                                    let ns = push_ns_values_get_ns(
+                                        &mut namespace_strbuffer,
+                                        prefix,
+                                        attr.value,
+                                        element_level,
+                                    );
+                                    namespace_list.push(ns);
+                                }
+                                attr.local_name = qname.local_name;
+                                attr.prefix = qname.prefix;
+                                // let range_local_name = push_str_get_range(
+                                //     &mut strbuffer,
+                                //     qname.local_name,
+                                // );
+                                // attr.local_name = &strbuffer[range_local_name];
+                            }
+                            Err(_e) => {
+                                return Err(error::Error::Parsing(format!(
+                                    "Attribute does not conform to QName spec: {}",
+                                    attr.name
+                                )))
+                            }
+                        }
+                    }
+
+                    for attr in start_element.attributes.iter_mut() {
+                        //Default namespace doesn't apply to attributes
+                        if attr.prefix == "" || attr.prefix == "xmlns" {
+                            continue;
+                        }
+                        match namespace_list
+                            .iter()
+                            .rfind(|ns| &namespace_strbuffer[ns.prefix.clone()] == attr.prefix)
+                        {
+                            Some(ns) => attr.namespace = &namespace_strbuffer[ns.value.clone()],
+                            None => {
+                                return Err(error::Error::Parsing(format!(
+                                    "Namespace not found for prefix: {} , attribute: {} , element: {}",
+                                    attr.prefix, attr.name,start_element.name
+                                )));
+                            }
+                        }
+                    }
+
+                    //resolve namespaces for element and attributes.
+
+                    match QName(start_element.name.as_bytes()) {
+                        Ok(qres) => {
+                            let qname = qres.1;
+                            start_element.local_name = qname.local_name;
+                            start_element.prefix = qname.prefix;
+
+                            match namespace_list.iter().rfind(|ns| {
+                                &namespace_strbuffer[ns.prefix.clone()] == start_element.prefix
+                            }) {
+                                Some(ns) => {
+                                    start_element.namespace = &namespace_strbuffer[ns.value.clone()]
+                                }
+
+                                None => {
+                                    if start_element.prefix == "" {
+                                        //it is fine
+                                    } else {
+                                        return Err(error::Error::Parsing(format!(
+                                            "Namespace not found for Element prefix. element: {}",
+                                            start_element.name
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            return Err(error::Error::Parsing(format!(
+                                "Element name does not conform to QName spec: {}",
+                                start_element.name
+                            )));
+                        }
+                    }
+                }
+
+                element_level -= 1;
+                if element_level == 0 {
+                    //could be a root only document.
+                    state = ParserState::DocEnd;
+                }
+
+                xml_sax::Event::StartElement(start_element)
+                //add endelement after this? no..?
+            }
+            ContentRelaxed::EndElement(event1) => {
+                //todo: check if it is the expected tag
+
+                match element_list.pop() {
+                    Some(r) => {
+                        if &element_strbuffer[r.clone()] == event1.name {
+                            element_strbuffer.truncate(r.start);
+                        } else {
+                            return Err(error::Error::Parsing(format!(
+                                "Expected closing tag: {} ,found: {}",
+                                &element_strbuffer[r.clone()],
+                                event1.name
+                            )));
+
+                            // TODO Expected closing tag: ... &element_strbuffer[r.clone()] found event1.name
+                        }
+                    }
+                    None => {
+                        return Err(error::Error::Parsing(format!(
+                            "No starting tag for: {}",
+                            event1.name
+                        )))
+                    }
+                }
+
+                if is_namespace_aware {
+                    // clear up namespaces
+                    match namespace_list
+                        .iter()
+                        .rposition(|ns| ns.level <= element_level)
+                    {
+                        Some(pos) => {
+                            if let Some(starting_pos) =
+                                namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
+                            {
+                                namespace_list.truncate(pos + 1);
+                                namespace_strbuffer.truncate(starting_pos);
+                            }
+                        }
+                        None => {
+                            // nothing to remove
+                        }
+                    }
+                }
+
+                // let range = push_str_get_range(
+                //     &mut element_strbuffer,
+                //     start_element.name,
+                // );
+                // element_list.push(range);
+
+                let start = strbuffer.len();
+                let size = event1.name.len();
+                strbuffer.push_str(event1.name);
+                let mut end_element = xml_sax::EndElement {
+                    name: &strbuffer[start..(start + size)],
+                    local_name: "",
+                    prefix: "",
+                    namespace: "",
+                };
+
+                element_level -= 1;
+                if element_level == 0 {
+                    state = ParserState::DocEnd;
+                }
+
+                if is_namespace_aware {
+                    match QName(end_element.name.as_bytes()) {
+                        Ok(qres) => {
+                            let qname = qres.1;
+                            end_element.local_name = qname.local_name;
+                            end_element.prefix = qname.prefix;
+
+                            match namespace_list.iter().rfind(|ns| {
+                                &namespace_strbuffer[ns.prefix.clone()] == end_element.prefix
+                            }) {
+                                Some(ns) => {
+                                    end_element.namespace = &namespace_strbuffer[ns.value.clone()]
+                                }
+                                None => {
+                                    if end_element.prefix == "" {
+                                        //it is fine
+                                    } else {
+                                        return Err(error::Error::Parsing(format!(
+                                            "Namespace prefix not found for element: {}",
+                                            end_element.name
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            return Err(error::Error::Parsing(format!(
+                                "Element name does not conform to QName spec: {}",
+                                end_element.name
+                            )))
+                        }
+                    }
+                }
+                xml_sax::Event::EndElement(end_element)
+            }
+            ContentRelaxed::Reference(event1) => {
+                // let start = strbuffer.len();
+                // let size = event1.initial.len();
+                // let range_initial = Range {
+                //     start: start,
+                //     end: start + size,
+                // };
+                // strbuffer.push_str(event1.initial);
+
+                let range: Range<usize> = push_str_get_range(&mut strbuffer, event1.initial);
+
+                //we handle the case when it is a character, not a string reference
+                let raw = event1.initial;
+                let resolved_char: Option<char>;
+                if raw.starts_with("&#x") {
+                    let hex_val = &raw[3..raw.len() - 1];
+
+                    resolved_char = match u32::from_str_radix(&hex_val, 16) {
+                        Ok(a) => match char::from_u32(a) {
+                            Some(c) => Some(c),
+                            None => None,
+                        },
+                        Err(_) => None,
+                    }
+                } else if raw.starts_with("&#") {
+                    let hex_val = &raw[2..raw.len() - 1];
+
+                    resolved_char = match u32::from_str_radix(&hex_val, 10) {
+                        Ok(a) => match char::from_u32(a) {
+                            Some(c) => Some(c),
+                            None => None,
+                        },
+                        Err(_) => None,
+                    }
+                } else {
+                    resolved_char = match event1.initial {
+                        // we don't need .as_ref() or &* as it is not String -> https://github.com/rust-lang/rust/issues/28606
+                        "&amp;" => Some('&'),
+                        "&lt;" => Some('<'),
+                        "&gt;" => Some('>'),
+                        "&quot;" => Some('"'),
+                        "&apos;" => Some('\''),
+                        _ => None,
+                    }
+                }
+
+                let range_resolved: Option<Range<usize>> = match resolved_char {
+                    Some(ch) => {
+                        let mut tmp = [0u8; 4];
+                        let addition = ch.encode_utf8(&mut tmp);
+                        Some(push_str_get_range(&mut strbuffer, addition))
+                    }
+                    None => None,
+                    // &* -> https://github.com/rust-lang/rust/issues/28606
+                    // "&amp;" => Some(push_str_get_range(&mut strbuffer, "&")),
+                    // "&lt;" => Some(push_str_get_range(&mut strbuffer, "<")),
+                    // "&gt;" => Some(push_str_get_range(&mut strbuffer, ">")),
+                    // "&quot;" => Some(push_str_get_range(&mut strbuffer, "\"")),
+                    // "&apos;" => Some(push_str_get_range(&mut strbuffer, "'")),
+                    // _ => None,
+                };
+
+                //we are ignoring DTD entity refs
+
+                let reference_event = xml_sax::Reference {
+                    raw: &strbuffer[range],
+                    resolved: match range_resolved {
+                        Some(range) => Some(&strbuffer[range]),
+                        None => None,
+                    },
+                };
+
+                xml_sax::Event::Reference(reference_event)
+            }
+            ContentRelaxed::CdataStart => xml_sax::Event::StartCdataSection,
+            ContentRelaxed::CommentStart => xml_sax::Event::StartComment,
+        },
+        InternalSuccess::InsideCdata(ic) => match ic {
+            InsideCdata::Characters(characters) => {
+                let start = strbuffer.len();
+                let size = characters.len();
+                strbuffer.push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+                xml_sax::Event::Cdata(&strbuffer[start..(start + size)])
+            }
+            InsideCdata::CdataEnd => xml_sax::Event::EndCdataSection,
+        },
+        InternalSuccess::InsideComment(ic) => match ic {
+            InsideComment::Characters(characters) => {
+                let start = strbuffer.len();
+                let size = characters.len();
+                strbuffer.push_str(unsafe { std::str::from_utf8_unchecked(characters) });
+
+                xml_sax::Event::Comment(&strbuffer[start..(start + size)])
+            }
+            InsideComment::CommentEnd => xml_sax::Event::EndComment,
+        },
+        InternalSuccess::Misc(misc) => match misc {
+            Misc::PI(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::ProcessingInstruction(&strbuffer[range])
+            }
+            Misc::Whitespace(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::Whitespace(&strbuffer[range])
+            }
+            Misc::CommentStart => xml_sax::Event::StartComment,
+        },
+        InternalSuccess::MiscBeforeDoctype(misc) => match misc {
+            MiscBeforeDoctype::PI(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::ProcessingInstruction(&strbuffer[range])
+            }
+            MiscBeforeDoctype::Whitespace(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::Whitespace(&strbuffer[range])
+            }
+            MiscBeforeDoctype::CommentStart => xml_sax::Event::StartComment,
+            MiscBeforeDoctype::DocType(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::DocumentTypeDeclaration(&strbuffer[range])
+            }
+        },
+        InternalSuccess::MiscBeforeXmlDecl(misc) => match misc {
+            MiscBeforeXmlDecl::XmlDecl(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::XmlDeclaration(&strbuffer[range])
+            }
+            MiscBeforeXmlDecl::PI(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::ProcessingInstruction(&strbuffer[range])
+            }
+            MiscBeforeXmlDecl::Whitespace(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::Whitespace(&strbuffer[range])
+            }
+            MiscBeforeXmlDecl::CommentStart => xml_sax::Event::StartComment,
+            MiscBeforeXmlDecl::DocType(a) => {
+                let str = unsafe { std::str::from_utf8_unchecked(a) };
+                let range = push_str_get_range(&mut strbuffer, &str);
+                xml_sax::Event::DocumentTypeDeclaration(&strbuffer[range])
+            }
+        },
+    };
+    Ok((event, state, element_level))
+}
+
+fn read_event_splitted<'a, 'b, R: Read>(
     mut state: ParserState,
 
     bufreader: &BufReader<R>,
-    buffer2: &Vec<u8>,
+    buffer2: &'b Vec<u8>,
 
-    mut strbuffer: &'a mut String,
     mut offset: usize,
-
     // document_complete: bool, //if element_level reaches 0 again , we control this via state
-    mut element_level: usize,
-    mut element_strbuffer: &mut String,
-    element_list: &mut Vec<Range<usize>>,
-
-    is_namespace_aware: bool,
-    mut namespace_strbuffer: &'a mut String,
-    namespace_list: &mut Vec<Namespace>,
-) -> SaxResult<(xml_sax::Event<'a>, ParserState, usize, usize)> {
-    let event2: xml_sax::Event;
+) -> SaxResult<(InternalSuccess<'b>, ParserState, usize)> {
+    let event2: InternalSuccess;
     match state {
         ParserState::Initial => {
             state = ParserState::DocStartBeforeXmlDecl;
-            return Ok((xml_sax::Event::StartDocument, state, offset, element_level));
+            return Ok((InternalSuccess::StartDocument, state, offset));
         }
         ParserState::DocStartBeforeXmlDecl => {
             let res = misc_before_xmldecl(&buffer2);
@@ -218,52 +766,24 @@ fn read_event_splitted<'a, R: Read>(
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
                     state = ParserState::DocStartBeforeDocType;
+
                     match parseresult.1 {
-                        MiscBeforeXmlDecl::XmlDecl(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::XmlDeclaration(&strbuffer[range])
-                        }
-                        MiscBeforeXmlDecl::PI(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::ProcessingInstruction(&strbuffer[range])
-                        }
-                        MiscBeforeXmlDecl::Whitespace(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::Whitespace(&strbuffer[range])
-                        }
+                        MiscBeforeXmlDecl::XmlDecl(a) => {}
+                        MiscBeforeXmlDecl::PI(a) => {}
+                        MiscBeforeXmlDecl::Whitespace(a) => {}
                         MiscBeforeXmlDecl::CommentStart => {
                             state = ParserState::DocStartBeforeDocTypeInsideComment;
-
-                            event2 = xml_sax::Event::StartComment;
                         }
                         MiscBeforeXmlDecl::DocType(a) => {
                             state = ParserState::DocStart;
-
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::DocumentTypeDeclaration(&strbuffer[range]);
                         }
                     }
+                    event2 = InternalSuccess::MiscBeforeXmlDecl(parseresult.1);
                 }
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
-                    return read_event_splitted(
-                        state,
-                        bufreader,
-                        buffer2,
-                        strbuffer,
-                        offset,
-                        element_level,
-                        element_strbuffer,
-                        element_list,
-                        is_namespace_aware,
-                        namespace_strbuffer,
-                        namespace_list,
-                    );
+                    return read_event_splitted(state, bufreader, buffer2, offset);
                 }
             }
         }
@@ -272,48 +792,23 @@ fn read_event_splitted<'a, R: Read>(
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
-                    // state = ParserState::DocStartBeforeDocType;
+
                     match parseresult.1 {
-                        MiscBeforeDoctype::PI(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::ProcessingInstruction(&strbuffer[range])
-                        }
-                        MiscBeforeDoctype::Whitespace(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::Whitespace(&strbuffer[range])
-                        }
+                        MiscBeforeDoctype::PI(a) => {}
+                        MiscBeforeDoctype::Whitespace(a) => {}
                         MiscBeforeDoctype::CommentStart => {
                             state = ParserState::DocStartBeforeDocTypeInsideComment;
-
-                            event2 = xml_sax::Event::StartComment;
                         }
                         MiscBeforeDoctype::DocType(a) => {
                             state = ParserState::DocStart;
-
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::DocumentTypeDeclaration(&strbuffer[range]);
                         }
                     }
+                    event2 = InternalSuccess::MiscBeforeDoctype(parseresult.1);
                 }
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
-                    return read_event_splitted(
-                        state,
-                        bufreader,
-                        buffer2,
-                        strbuffer,
-                        offset,
-                        element_level,
-                        element_strbuffer,
-                        element_list,
-                        is_namespace_aware,
-                        namespace_strbuffer,
-                        namespace_list,
-                    );
+                    return read_event_splitted(state, bufreader, buffer2, offset);
                 }
             }
         }
@@ -323,20 +818,14 @@ fn read_event_splitted<'a, R: Read>(
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
-                    match parseresult.1 {
-                        InsideComment::Characters(characters) => {
-                            let start = strbuffer.len();
-                            let size = characters.len();
-                            strbuffer
-                                .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                            event2 = xml_sax::Event::Comment(&strbuffer[start..(start + size)])
-                        }
+                    match parseresult.1 {
+                        InsideComment::Characters(characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::DocStartBeforeDocType;
-                            event2 = xml_sax::Event::EndComment;
                         }
                     }
+                    event2 = InternalSuccess::InsideComment(parseresult.1);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(
@@ -351,40 +840,20 @@ fn read_event_splitted<'a, R: Read>(
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
                     // state = ParserState::DocStartBeforeDocType;
+
                     match parseresult.1 {
-                        Misc::PI(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::ProcessingInstruction(&strbuffer[range])
-                        }
-                        Misc::Whitespace(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::Whitespace(&strbuffer[range])
-                        }
+                        Misc::PI(a) => {}
+                        Misc::Whitespace(a) => {}
                         Misc::CommentStart => {
                             state = ParserState::DocStartInsideComment;
-
-                            event2 = xml_sax::Event::StartComment;
                         }
                     }
+                    event2 = InternalSuccess::Misc(parseresult.1);
                 }
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
-                    return read_event_splitted(
-                        state,
-                        bufreader,
-                        buffer2,
-                        strbuffer,
-                        offset,
-                        element_level,
-                        element_strbuffer,
-                        element_list,
-                        is_namespace_aware,
-                        namespace_strbuffer,
-                        namespace_list,
-                    );
+                    return read_event_splitted(state, bufreader, buffer2, offset);
                 }
             }
         }
@@ -394,20 +863,14 @@ fn read_event_splitted<'a, R: Read>(
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
-                    match parseresult.1 {
-                        InsideComment::Characters(characters) => {
-                            let start = strbuffer.len();
-                            let size = characters.len();
-                            strbuffer
-                                .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                            event2 = xml_sax::Event::Comment(&strbuffer[start..(start + size)])
-                        }
+                    match parseresult.1 {
+                        InsideComment::Characters(characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::DocStart;
-                            event2 = xml_sax::Event::EndComment;
                         }
                     }
+                    event2 = InternalSuccess::InsideComment(parseresult.1);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -422,483 +885,25 @@ fn read_event_splitted<'a, R: Read>(
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
 
-                    match parseresult.1 {
-                        ContentRelaxed::CharData(event1) => {
-                            let start = strbuffer.len();
-                            let size = event1.len();
-                            strbuffer.push_str(unsafe { std::str::from_utf8_unchecked(event1) });
-
-                            event2 = xml_sax::Event::Characters(&strbuffer[start..(start + size)])
-                        }
-                        ContentRelaxed::StartElement(event1) => {
-                            //todo decode
-
-                            if is_namespace_aware {
-                                // clear up namespaces
-                                match namespace_list
-                                    .iter()
-                                    .rposition(|ns| ns.level <= element_level)
-                                {
-                                    Some(pos) => {
-                                        if let Some(starting_pos) =
-                                            namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
-                                        {
-                                            namespace_list.truncate(pos + 1);
-                                            namespace_strbuffer.truncate(starting_pos);
-                                        }
-                                    }
-                                    None => {
-                                        // nothing to remove
-                                    }
-                                }
-                            }
-
-                            let mut start_element = convert_start_element(strbuffer, event1);
-                            element_level += 1;
-
-                            //add element to list for expected tags check
-
-                            let range =
-                                push_str_get_range(&mut element_strbuffer, start_element.name);
-                            element_list.push(range);
-                            // add namespaces
-                            if is_namespace_aware {
-                                //first process namespace definitions
-                                for attr in start_element.attributes.iter_mut() {
-                                    match QName(attr.name.as_bytes()) {
-                                        Ok(qres) => {
-                                            let qname = qres.1;
-
-                                            if qname.prefix == "" && qname.local_name == "xmlns" {
-                                                //set default namespace
-                                                let ns = push_ns_values_get_ns(
-                                                    &mut namespace_strbuffer,
-                                                    "",
-                                                    attr.value,
-                                                    element_level,
-                                                );
-                                                namespace_list.push(ns);
-                                            }
-
-                                            if qname.prefix == "xmlns" {
-                                                //set prefixed namespace
-                                                let prefix = qname.local_name;
-                                                let ns = push_ns_values_get_ns(
-                                                    &mut namespace_strbuffer,
-                                                    prefix,
-                                                    attr.value,
-                                                    element_level,
-                                                );
-                                                namespace_list.push(ns);
-                                            }
-                                            attr.local_name = qname.local_name;
-                                            attr.prefix = qname.prefix;
-                                            // let range_local_name = push_str_get_range(
-                                            //     &mut strbuffer,
-                                            //     qname.local_name,
-                                            // );
-                                            // attr.local_name = &strbuffer[range_local_name];
-                                        }
-                                        Err(_e) => {
-                                            return Err(error::Error::Parsing(format!(
-                                                "Attribute does not conform to QName spec: {}",
-                                                attr.name
-                                            )))
-                                        }
-                                    }
-                                }
-
-                                for attr in start_element.attributes.iter_mut() {
-                                    //Default namespace doesn't apply to attributes
-                                    if attr.prefix == "" || attr.prefix == "xmlns" {
-                                        continue;
-                                    }
-                                    match namespace_list.iter().rfind(|ns| {
-                                        &namespace_strbuffer[ns.prefix.clone()]
-                                            == attr.prefix
-                                    }) {
-                                                Some(ns) => {
-                                            attr.namespace =
-                                                &namespace_strbuffer[ns.value.clone()]
-                                        }
-                                        None => {
-                                            return Err(error::Error::Parsing(format!(
-                                                "Namespace not found for prefix: {} , attribute: {} , element: {}", attr.prefix, attr.name, start_element.name
-                                            )))
-                                        }
-                                    }
-                                }
-
-                                //resolve namespaces for element and attributes.
-
-                                match QName(start_element.name.as_bytes()) {
-                                    Ok(qres) => {
-                                        let qname = qres.1;
-                                        start_element.local_name = qname.local_name;
-                                        start_element.prefix = qname.prefix;
-
-                                        match namespace_list.iter().rfind(|ns| {
-                                            &namespace_strbuffer[ns.prefix.clone()]
-                                                == start_element.prefix
-                                        }) {
-                                            Some(ns) => {
-                                                start_element.namespace =
-                                                    &namespace_strbuffer[ns.value.clone()]
-                                            }
-
-                                            None => {
-                                                if start_element.prefix == "" {
-                                                    //it is fine
-                                                } else {
-                                                    return Err(error::Error::Parsing(format!("Namespace prefix not found for element: {}",start_element.name)));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(_e) => {
-                                        return Err(error::Error::Parsing(format!(
-                                            "Element name does not conform to QName spec: {}",
-                                            start_element.name
-                                        )))
-                                    }
-                                }
-                            }
-
-                            event2 = xml_sax::Event::StartElement(start_element);
-                        }
-                        ContentRelaxed::EmptyElemTag(event1) => {
-                            if is_namespace_aware {
-                                // clear up namespaces
-                                match namespace_list
-                                    .iter()
-                                    .rposition(|ns| ns.level <= element_level)
-                                {
-                                    Some(pos) => {
-                                        if let Some(starting_pos) =
-                                            namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
-                                        {
-                                            namespace_list.truncate(pos + 1);
-                                            namespace_strbuffer.truncate(starting_pos);
-                                        }
-                                    }
-                                    None => {
-                                        // nothing to remove
-                                    }
-                                }
-                            }
-
-                            let mut start_element = convert_start_element(strbuffer, event1);
-                            start_element.is_empty = true;
-                            element_level += 1;
-                            //todo decode
-
-                            if is_namespace_aware {
-                                //first process namespace definitions
-                                for attr in start_element.attributes.iter_mut() {
-                                    match QName(attr.name.as_bytes()) {
-                                        Ok(qres) => {
-                                            let qname = qres.1;
-
-                                            if qname.prefix == "" && qname.local_name == "xmlns" {
-                                                //set default namespace
-                                                let ns = push_ns_values_get_ns(
-                                                    &mut namespace_strbuffer,
-                                                    "",
-                                                    attr.value,
-                                                    element_level,
-                                                );
-                                                namespace_list.push(ns);
-                                            }
-
-                                            if qname.prefix == "xmlns" {
-                                                //set prefixed namespace
-                                                let prefix = qname.local_name;
-                                                let ns = push_ns_values_get_ns(
-                                                    &mut namespace_strbuffer,
-                                                    prefix,
-                                                    attr.value,
-                                                    element_level,
-                                                );
-                                                namespace_list.push(ns);
-                                            }
-                                            attr.local_name = qname.local_name;
-                                            attr.prefix = qname.prefix;
-                                            // let range_local_name = push_str_get_range(
-                                            //     &mut strbuffer,
-                                            //     qname.local_name,
-                                            // );
-                                            // attr.local_name = &strbuffer[range_local_name];
-                                        }
-                                        Err(_e) => {
-                                            return Err(error::Error::Parsing(format!(
-                                                "Attribute does not conform to QName spec: {}",
-                                                attr.name
-                                            )))
-                                        }
-                                    }
-                                }
-
-                                for attr in start_element.attributes.iter_mut() {
-                                    //Default namespace doesn't apply to attributes
-                                    if attr.prefix == "" || attr.prefix == "xmlns" {
-                                        continue;
-                                    }
-                                    match namespace_list.iter().rfind(|ns| {
-                                        &namespace_strbuffer[ns.prefix.clone()] == attr.prefix
-                                    }) {
-                                        Some(ns) => {
-                                            attr.namespace = &namespace_strbuffer[ns.value.clone()]
-                                        }
-                                        None => {
-                                            return Err(error::Error::Parsing(format!(
-                                                "Namespace not found for prefix: {} , attribute: {} , element: {}",
-                                                attr.prefix, attr.name,start_element.name
-                                            )));
-                                        }
-                                    }
-                                }
-
-                                //resolve namespaces for element and attributes.
-
-                                match QName(start_element.name.as_bytes()) {
-                                    Ok(qres) => {
-                                        let qname = qres.1;
-                                        start_element.local_name = qname.local_name;
-                                        start_element.prefix = qname.prefix;
-
-                                        match namespace_list.iter().rfind(|ns| {
-                                            &namespace_strbuffer[ns.prefix.clone()]
-                                                == start_element.prefix
-                                        }) {
-                                            Some(ns) => {
-                                                start_element.namespace =
-                                                    &namespace_strbuffer[ns.value.clone()]
-                                            }
-
-                                            None => {
-                                                if start_element.prefix == "" {
-                                                    //it is fine
-                                                } else {
-                                                    return Err(error::Error::Parsing(format!(
-                                                        "Namespace not found for Element prefix. element: {}",
-                                                        start_element.name
-                                                    )));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(_e) => {
-                                        return Err(error::Error::Parsing(format!(
-                                            "Element name does not conform to QName spec: {}",
-                                            start_element.name
-                                        )));
-                                    }
-                                }
-                            }
-
-                            event2 = xml_sax::Event::StartElement(start_element);
-
-                            element_level -= 1;
-                            if element_level == 0 {
-                                //could be a root only document.
-                                state = ParserState::DocEnd;
-                            }
-
-                            //add endelement after this? no..?
-                        }
-                        ContentRelaxed::EndElement(event1) => {
-                            //todo: check if it is the expected tag
-
-                            match element_list.pop() {
-                                Some(r) => {
-                                    if &element_strbuffer[r.clone()] == event1.name {
-                                        element_strbuffer.truncate(r.start);
-                                    } else {
-                                        return Err(error::Error::Parsing(format!(
-                                            "Expected closing tag: {} ,found: {}",
-                                            &element_strbuffer[r.clone()],
-                                            event1.name
-                                        )));
-
-                                        // TODO Expected closing tag: ... &element_strbuffer[r.clone()] found event1.name
-                                    }
-                                }
-                                None => {
-                                    return Err(error::Error::Parsing(format!(
-                                        "No starting tag for: {}",
-                                        event1.name
-                                    )))
-                                }
-                            }
-
-                            if is_namespace_aware {
-                                // clear up namespaces
-                                match namespace_list
-                                    .iter()
-                                    .rposition(|ns| ns.level <= element_level)
-                                {
-                                    Some(pos) => {
-                                        if let Some(starting_pos) =
-                                            namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
-                                        {
-                                            namespace_list.truncate(pos + 1);
-                                            namespace_strbuffer.truncate(starting_pos);
-                                        }
-                                    }
-                                    None => {
-                                        // nothing to remove
-                                    }
-                                }
-                            }
-
-                            // let range = push_str_get_range(
-                            //     &mut element_strbuffer,
-                            //     start_element.name,
-                            // );
-                            // element_list.push(range);
-
-                            let start = strbuffer.len();
-                            let size = event1.name.len();
-                            strbuffer.push_str(event1.name);
-                            let mut end_element = xml_sax::EndElement {
-                                name: &strbuffer[start..(start + size)],
-                                local_name: "",
-                                prefix: "",
-                                namespace: "",
-                            };
-
-                            element_level -= 1;
-                            if element_level == 0 {
-                                state = ParserState::DocEnd;
-                            }
-
-                            if is_namespace_aware {
-                                match QName(end_element.name.as_bytes()) {
-                                    Ok(qres) => {
-                                        let qname = qres.1;
-                                        end_element.local_name = qname.local_name;
-                                        end_element.prefix = qname.prefix;
-
-                                        match namespace_list.iter().rfind(|ns| {
-                                            &namespace_strbuffer[ns.prefix.clone()]
-                                                == end_element.prefix
-                                        }) {
-                                            Some(ns) => {
-                                                end_element.namespace =
-                                                    &namespace_strbuffer[ns.value.clone()]
-                                            }
-                                            None => {
-                                                if end_element.prefix == "" {
-                                                    //it is fine
-                                                } else {
-                                                    return Err(error::Error::Parsing(format!(
-                                                        "Namespace prefix not found for element: {}",
-                                                        end_element.name
-                                                    )));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(_e) => {
-                                        return Err(error::Error::Parsing(format!(
-                                            "Element name does not conform to QName spec: {}",
-                                            end_element.name
-                                        )))
-                                    }
-                                }
-                            }
-
-                            event2 = xml_sax::Event::EndElement(end_element);
-                        }
-                        ContentRelaxed::Reference(event1) => {
-                            // let start = strbuffer.len();
-                            // let size = event1.initial.len();
-                            // let range_initial = Range {
-                            //     start: start,
-                            //     end: start + size,
-                            // };
-                            // strbuffer.push_str(event1.initial);
-
-                            let range: Range<usize> =
-                                push_str_get_range(&mut strbuffer, event1.initial);
-
-                            //we handle the case when it is a character, not a string reference
-                            let raw = event1.initial;
-                            let resolved_char: Option<char>;
-                            if raw.starts_with("&#x") {
-                                let hex_val = &raw[3..raw.len() - 1];
-
-                                resolved_char = match u32::from_str_radix(&hex_val, 16) {
-                                    Ok(a) => match char::from_u32(a) {
-                                        Some(c) => Some(c),
-                                        None => None,
-                                    },
-                                    Err(_) => None,
-                                }
-                            } else if raw.starts_with("&#") {
-                                let hex_val = &raw[2..raw.len() - 1];
-
-                                resolved_char = match u32::from_str_radix(&hex_val, 10) {
-                                    Ok(a) => match char::from_u32(a) {
-                                        Some(c) => Some(c),
-                                        None => None,
-                                    },
-                                    Err(_) => None,
-                                }
-                            } else {
-                                resolved_char = match event1.initial {
-                                    // we don't need .as_ref() or &* as it is not String -> https://github.com/rust-lang/rust/issues/28606
-                                    "&amp;" => Some('&'),
-                                    "&lt;" => Some('<'),
-                                    "&gt;" => Some('>'),
-                                    "&quot;" => Some('"'),
-                                    "&apos;" => Some('\''),
-                                    _ => None,
-                                }
-                            }
-
-                            let range_resolved: Option<Range<usize>> = match resolved_char {
-                                Some(ch) => {
-                                    let mut tmp = [0u8; 4];
-                                    let addition = ch.encode_utf8(&mut tmp);
-                                    Some(push_str_get_range(&mut strbuffer, addition))
-                                }
-                                None => None,
-                                // &* -> https://github.com/rust-lang/rust/issues/28606
-                                // "&amp;" => Some(push_str_get_range(&mut strbuffer, "&")),
-                                // "&lt;" => Some(push_str_get_range(&mut strbuffer, "<")),
-                                // "&gt;" => Some(push_str_get_range(&mut strbuffer, ">")),
-                                // "&quot;" => Some(push_str_get_range(&mut strbuffer, "\"")),
-                                // "&apos;" => Some(push_str_get_range(&mut strbuffer, "'")),
-                                // _ => None,
-                            };
-
-                            //we are ignoring DTD entity refs
-
-                            let reference_event = xml_sax::Reference {
-                                raw: &strbuffer[range],
-                                resolved: match range_resolved {
-                                    Some(range) => Some(&strbuffer[range]),
-                                    None => None,
-                                },
-                            };
-
-                            event2 = xml_sax::Event::Reference(reference_event)
-                        }
+                    match &parseresult.1 {
+                        ContentRelaxed::CharData(event1) => {}
+                        ContentRelaxed::StartElement(event1) => {}
+                        ContentRelaxed::EmptyElemTag(event1) => {}
+                        ContentRelaxed::EndElement(event1) => {}
+                        ContentRelaxed::Reference(event1) => {}
                         ContentRelaxed::CdataStart => {
-                            event2 = xml_sax::Event::StartCdataSection;
                             state = ParserState::InsideCdata;
                         }
                         ContentRelaxed::CommentStart => {
-                            event2 = xml_sax::Event::StartComment;
                             state = ParserState::InsideComment;
                         }
                     }
+                    event2 = InternalSuccess::ContentRelaxed(parseresult.1);
                 }
                 Err(nom::Err::Incomplete(_e)) => {
                     let ending = String::from_utf8_lossy(&buffer2);
 
-                    return Err(error::Error::Parsing(format!(
+                    return Err(error::Error::UnexpectedEof(format!(
                         "Incomplete file / Premature end-of-file: {}",
                         ending
                     )));
@@ -924,20 +929,14 @@ fn read_event_splitted<'a, R: Read>(
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
-                    match parseresult.1 {
-                        InsideCdata::Characters(characters) => {
-                            let start = strbuffer.len();
-                            let size = characters.len();
-                            strbuffer
-                                .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                            event2 = xml_sax::Event::Cdata(&strbuffer[start..(start + size)])
-                        }
+                    match parseresult.1 {
+                        InsideCdata::Characters(characters) => {}
                         InsideCdata::CdataEnd => {
                             state = ParserState::Content;
-                            event2 = xml_sax::Event::EndCdataSection;
                         }
                     }
+                    event2 = InternalSuccess::InsideCdata(parseresult.1);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -952,20 +951,14 @@ fn read_event_splitted<'a, R: Read>(
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
-                    match parseresult.1 {
-                        InsideComment::Characters(characters) => {
-                            let start = strbuffer.len();
-                            let size = characters.len();
-                            strbuffer
-                                .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                            event2 = xml_sax::Event::Comment(&strbuffer[start..(start + size)])
-                        }
+                    match parseresult.1 {
+                        InsideComment::Characters(characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::Content;
-                            event2 = xml_sax::Event::EndComment;
                         }
                     }
+                    event2 = InternalSuccess::InsideComment(parseresult.1);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -978,30 +971,22 @@ fn read_event_splitted<'a, R: Read>(
             // EOF
             if buffer2.len() == 0 {
                 // event2 = xml_sax::Event::EndDocument;
-                return Ok((xml_sax::Event::EndDocument, state, offset, element_level));
+                return Ok((InternalSuccess::EndDocument, state, offset));
             }
 
             let res = misc(&buffer2);
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
+
                     match parseresult.1 {
-                        Misc::PI(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::ProcessingInstruction(&strbuffer[range])
-                        }
-                        Misc::Whitespace(a) => {
-                            let str = unsafe { std::str::from_utf8_unchecked(a) };
-                            let range = push_str_get_range(&mut strbuffer, &str);
-                            event2 = xml_sax::Event::Whitespace(&strbuffer[range])
-                        }
+                        Misc::PI(a) => {}
+                        Misc::Whitespace(a) => {}
                         Misc::CommentStart => {
                             state = ParserState::DocEndInsideComment;
-
-                            event2 = xml_sax::Event::StartComment;
                         }
                     }
+                    event2 = InternalSuccess::Misc(parseresult.1);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -1016,20 +1001,14 @@ fn read_event_splitted<'a, R: Read>(
             match res {
                 Ok(parseresult) => {
                     offset = buffer2.offset(parseresult.0);
-                    match parseresult.1 {
-                        InsideComment::Characters(characters) => {
-                            let start = strbuffer.len();
-                            let size = characters.len();
-                            strbuffer
-                                .push_str(unsafe { std::str::from_utf8_unchecked(characters) });
 
-                            event2 = xml_sax::Event::Comment(&strbuffer[start..(start + size)])
-                        }
+                    match parseresult.1 {
+                        InsideComment::Characters(characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::DocEnd;
-                            event2 = xml_sax::Event::EndComment;
                         }
                     }
+                    event2 = InternalSuccess::InsideComment(parseresult.1);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -1040,7 +1019,7 @@ fn read_event_splitted<'a, R: Read>(
         }
     }
 
-    Ok((event2, state, offset, element_level))
+    Ok((event2, state, offset))
 }
 
 impl<R: Read> Parser<R> {
@@ -1087,34 +1066,49 @@ impl<R: Read> Parser<R> {
         self.strbuffer.clear();
         read_data_splitted(&mut self.bufreader, &mut self.buffer2)?;
 
-        let res = read_event_splitted(
+        let event1;
+        loop {
+            let res = read_event_splitted(self.state, &self.bufreader, &self.buffer2, self.offset);
+            match res {
+                Ok(o) => {
+                    self.state = o.1;
+                    self.offset = o.2;
+
+                    event1 = o.0;
+                    break;
+                }
+                Err(err) => {
+                    //todo check eof increase internal buffer.
+                    return Err(err);
+                }
+            }
+        }
+        let event = event_converter(
             self.state,
-            &self.bufreader,
+            event1,
             &self.buffer2,
-            &mut self.strbuffer,
-            self.offset,
-            self.element_level,
-            &mut self.element_strbuffer,
             &mut self.element_list,
-            self.is_namespace_aware,
+            &mut self.strbuffer,
             &mut self.namespace_strbuffer,
             &mut self.namespace_list,
+            self.is_namespace_aware,
+            self.element_level,
+            &mut self.element_strbuffer,
         );
+        match event {
+            Ok(tpl) => {
+                self.state = tpl.1;
+                self.element_level = tpl.2;
 
-        match res {
-            Ok(o) => {
-                self.state = o.1;
-                self.offset = o.2;
-                self.element_level = o.3;
-                Ok(o.0)
+                return Ok(tpl.0);
             }
-            Err(err) => Err(err),
+            Err(err) => return Err(err),
         }
     }
     pub fn dummy<'a>(&'a mut self) {}
 
     // , buf: &'b [u8]
-    pub fn read_event1<'a>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
+    fn read_event1<'a>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
         // self.bufreader.consume(self.offset);
         self.buffer2.drain(0..self.offset);
         self.offset = 0;
