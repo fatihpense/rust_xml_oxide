@@ -26,6 +26,7 @@ struct MyCollectorSaxHandler {
     // characters should be collected because SAX parser can send them splitted for various reasons.
     characters_collected_vec: Vec<String>,
     characters_buf: String,
+    comments_buf: String,
 }
 
 fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
@@ -36,13 +37,14 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
         end_el_name_vec: Vec::new(),
         characters_collected_vec: Vec::new(),
         characters_buf: String::new(),
+        comments_buf: String::new(),
     };
 
     let mut p = Parser::from_reader(f);
 
     loop {
         let res = p.read_event();
-
+        // println!("{:?}", res);
         match res {
             Ok(event) => match event {
                 Event::StartElement(el) => {
@@ -137,13 +139,16 @@ fn test_18_cdata() {
 
 // comments should be ignored in content handler
 #[test]
-fn test_15_comment() {
+fn test_15_comment_1() {
     let s = String::from("<rootEl>comments<!--are ignored--><!---->.</rootEl>");
     let data = collect_with_parser(s.as_bytes());
 
     println!("{}", data.characters_collected_vec.get(0).unwrap());
-    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments");
-    assert_eq!(data.characters_collected_vec.get(1).unwrap(), ".");
+
+    assert_eq!(data.characters_buf, "comments.");
+    //dont depend on this functionality it depends on buffer size
+    // assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments");
+    // assert_eq!(data.characters_collected_vec.get(1).unwrap(), ".");
 }
 
 #[test]
@@ -155,6 +160,6 @@ fn test_15_comment_not_well_formed() {
     );
     let data = collect_with_parser(s.as_bytes());
 
-    println!("{}", data.characters_collected_vec.get(0).unwrap());
-    assert_eq!(data.characters_collected_vec.get(0).unwrap(), "comments.");
+    println!("{}", data.characters_buf);
+    assert_eq!(data.characters_buf, "comments.");
 }

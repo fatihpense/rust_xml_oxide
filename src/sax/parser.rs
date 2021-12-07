@@ -22,8 +22,11 @@ enum InternalSuccess<'a> {
 }
 
 use std::{
+    borrow::{Borrow, BorrowMut},
+    cell::{RefCell, RefMut},
     io::{BufRead, BufReader, Read},
     ops::Range,
+    rc::Rc,
     vec,
 };
 
@@ -54,7 +57,7 @@ struct Namespace {
 pub struct Parser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
-    buffer2: Vec<u8>,
+    buffer2: RefCell<Vec<u8>>,
 
     strbuffer: String,
     offset: usize,
@@ -168,8 +171,8 @@ mod error {
         #[error("SAX Parsing Err: {0}")]
         Parsing(String),
 
-        #[error("SAX Parsing Err: {0}")]
-        UnexpectedEof(String),
+        #[error("SAX Parsing Err: Unexpected EOF")]
+        UnexpectedEof,
     }
 }
 
@@ -193,13 +196,31 @@ fn read_data_splitted<R: Read>(
     bufreader.consume(amt);
     Ok(())
 }
+fn read_data_splitted_refcell<R: Read>(
+    bufreader: &mut BufReader<R>,
+    buffer2: &RefCell<Vec<u8>>,
+) -> Result<(), std::io::Error> {
+    match bufreader.fill_buf() {
+        Ok(_ok) => {}
+        Err(err) => return Err(err),
+    }
+
+    let amt: usize;
+    {
+        let data2 = bufreader.buffer();
+
+        buffer2.borrow_mut().extend_from_slice(data2);
+        amt = data2.len();
+    }
+    bufreader.consume(amt);
+    Ok(())
+}
 
 //todo move all states to read_event_splitted
 //todo? simplify the enum here to remove duplicates,then we move complexity to read_event method
 fn event_converter<'a, 'b>(
     mut state: ParserState,
     internal_event: InternalSuccess<'b>,
-    buffer2: &'b Vec<u8>,
 
     element_list: &mut Vec<Range<usize>>,
     mut strbuffer: &'a mut String,
@@ -780,6 +801,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::MiscBeforeXmlDecl(parseresult.1);
                 }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
+                }
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
@@ -805,6 +829,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::MiscBeforeDoctype(parseresult.1);
                 }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
+                }
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
@@ -820,12 +847,15 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer2.offset(parseresult.0);
 
                     match parseresult.1 {
-                        InsideComment::Characters(characters) => {}
+                        InsideComment::Characters(_characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::DocStartBeforeDocType;
                         }
                     }
                     event2 = InternalSuccess::InsideComment(parseresult.1);
+                }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(
@@ -850,6 +880,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::Misc(parseresult.1);
                 }
+
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
+                }
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
@@ -871,6 +905,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                         }
                     }
                     event2 = InternalSuccess::InsideComment(parseresult.1);
+                }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -900,13 +937,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::ContentRelaxed(parseresult.1);
                 }
+                // let ending = String::from_utf8_lossy(&buffer2);
                 Err(nom::Err::Incomplete(_e)) => {
-                    let ending = String::from_utf8_lossy(&buffer2);
-
-                    return Err(error::Error::UnexpectedEof(format!(
-                        "Incomplete file / Premature end-of-file: {}",
-                        ending
-                    )));
+                    return Err(error::Error::UnexpectedEof);
                 }
                 Err(_e) => {
                     let ending = String::from_utf8_lossy(&buffer2);
@@ -938,6 +971,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::InsideCdata(parseresult.1);
                 }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
+                }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
                         "Expecting CDATA content or CDATA closing tag "
@@ -959,6 +995,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                         }
                     }
                     event2 = InternalSuccess::InsideComment(parseresult.1);
+                }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
                 }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
@@ -988,6 +1027,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::Misc(parseresult.1);
                 }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
+                }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
                         "Unexpected entity/content at the end of the document."
@@ -1010,6 +1052,9 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     }
                     event2 = InternalSuccess::InsideComment(parseresult.1);
                 }
+                Err(nom::Err::Incomplete(_e)) => {
+                    return Err(error::Error::UnexpectedEof);
+                }
                 Err(_err) => {
                     return Err(error::Error::Parsing(format!(
                         "Expecting comment content or comment closing tag "
@@ -1028,7 +1073,7 @@ impl<R: Read> Parser<R> {
             state: ParserState::Initial,
             bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
-            buffer2: vec![],
+            buffer2: RefCell::new(vec![]),
             strbuffer: String::new(),
 
             element_level: 0, // should be same as self.element_list.len()
@@ -1041,9 +1086,12 @@ impl<R: Read> Parser<R> {
         }
     }
 
-    fn read_data(&mut self) -> Result<(), std::io::Error> {
+    fn read_data(&mut self) -> Result<usize, std::io::Error> {
+        let newread: usize;
         match self.bufreader.fill_buf() {
-            Ok(_ok) => {}
+            Ok(ok) => {
+                newread = ok.len();
+            }
             Err(err) => return Err(err),
         }
 
@@ -1051,62 +1099,85 @@ impl<R: Read> Parser<R> {
         {
             let data2 = self.bufreader.buffer();
 
-            self.buffer2.extend_from_slice(data2);
+            self.buffer2.borrow_mut().extend_from_slice(data2);
             amt = data2.len();
         }
         self.bufreader.consume(amt);
-        Ok(())
+
+        Ok(newread)
     }
 
     // rust is not yet smart about loops, nll, structs, conditional lifetimes
 
     pub fn read_event<'a>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
-        self.buffer2.drain(0..self.offset);
+        self.buffer2.borrow_mut().drain(0..self.offset);
         self.offset = 0;
         self.strbuffer.clear();
-        read_data_splitted(&mut self.bufreader, &mut self.buffer2)?;
+        // read_data_splitted(&mut self.bufreader, &mut self.buffer2)?;
+        // let event1;
 
-        let event1;
-        loop {
-            let res = read_event_splitted(self.state, &self.bufreader, &self.buffer2, self.offset);
-            match res {
-                Ok(o) => {
-                    self.state = o.1;
-                    self.offset = o.2;
+        let mut bytes_read: usize = 1; //magic number
 
-                    event1 = o.0;
-                    break;
-                }
-                Err(err) => {
-                    //todo check eof increase internal buffer.
-                    return Err(err);
-                }
-            }
+        if self.bufreader.capacity() > self.buffer2.borrow().len() {
+            bytes_read = self.read_data()?;
         }
-        let event = event_converter(
-            self.state,
-            event1,
-            &self.buffer2,
-            &mut self.element_list,
-            &mut self.strbuffer,
-            &mut self.namespace_strbuffer,
-            &mut self.namespace_list,
-            self.is_namespace_aware,
-            self.element_level,
-            &mut self.element_strbuffer,
-        );
-        match event {
-            Ok(tpl) => {
-                self.state = tpl.1;
-                self.element_level = tpl.2;
 
-                return Ok(tpl.0);
+        let mut read_more_data = false;
+        loop {
+            if read_more_data {
+                // read_data_splitted(&mut self.bufreader, &mut self.buffer2.borrow_mut())?;
+                bytes_read = self.read_data()?;
+                read_more_data = false;
+            } else {
+                let buffercell = self.buffer2.borrow_mut();
+                let res =
+                    read_event_splitted(self.state, &self.bufreader, &buffercell, self.offset);
+                match res {
+                    Ok(o) => {
+                        self.state = o.1;
+                        self.offset = o.2;
+
+                        // event1 = o.0;
+
+                        let event = event_converter(
+                            self.state,
+                            o.0,
+                            &mut self.element_list,
+                            &mut self.strbuffer,
+                            &mut self.namespace_strbuffer,
+                            &mut self.namespace_list,
+                            self.is_namespace_aware,
+                            self.element_level,
+                            &mut self.element_strbuffer,
+                        );
+                        match event {
+                            Ok(tpl) => {
+                                self.state = tpl.1;
+                                self.element_level = tpl.2;
+
+                                return Ok(tpl.0);
+                            }
+                            Err(err) => return Err(err),
+                        };
+                    }
+                    Err(error::Error::UnexpectedEof) => {
+                        //try reading again
+                        // read_data_splitted_refcell(&mut self.bufreader, &self.buffer2)?;
+                        if bytes_read == 0 {
+                            return Err(error::Error::UnexpectedEof);
+                        } else {
+                            read_more_data = true;
+                        }
+                    }
+                    Err(err) => {
+                        //todo check eof increase internal buffer.
+                        return Err(err);
+                    }
+                }
             }
-            Err(err) => return Err(err),
         }
     }
-    pub fn dummy<'a>(&'a mut self) {}
-
+    /*
     // , buf: &'b [u8]
     fn read_event1<'a>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
         // self.bufreader.consume(self.offset);
@@ -1953,6 +2024,7 @@ impl<R: Read> Parser<R> {
 
         Ok(event2)
     }
+    */
 }
 
 #[test]

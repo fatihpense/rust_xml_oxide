@@ -16,10 +16,10 @@ If you want to use `xml_sax` interface to implement another parser we can discus
 - Supports [Namespaces in XML 1.0](https://www.w3.org/TR/xml-names/)
 - It only supports UTF-8 encoding
 - It is a non-validating parser, it does important well-formedness checks
-- It ignores well-formedness in Processing Instructions, DTD, DOCTYPE and parses them as raw strings
+- Currently, it ignores well-formedness in Processing Instructions, DTD, DOCTYPE and parses them as raw strings
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
-- If you have an element tag or DOCTYPE declaration that is bigger than buffer size(currently default 8KB), it can fail
+- Reading chunk size is currently default 8KB, not configurable. If you have an element tag or DOCTYPE declaration that is bigger than buffer, it can allocate more memory temporarily.
 
 ## Example Usage
 
