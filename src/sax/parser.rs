@@ -24,11 +24,13 @@ enum InternalSuccess<'a> {
 use std::{
     borrow::{Borrow, BorrowMut},
     cell::{RefCell, RefMut},
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader, Read, Write},
     ops::Range,
     rc::Rc,
     vec,
 };
+
+use super::circular;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ParserState {
@@ -58,6 +60,7 @@ pub struct Parser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
     buffer2: RefCell<Vec<u8>>,
+    buffer3: circular::Buffer,
 
     strbuffer: String,
     offset: usize,
@@ -771,6 +774,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
 
     bufreader: &BufReader<R>,
     buffer2: &'b Vec<u8>,
+    buffer3: &'b circular::Buffer,
 
     mut offset: usize,
     // document_complete: bool, //if element_level reaches 0 again , we control this via state
@@ -782,10 +786,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
             return Ok((InternalSuccess::StartDocument, state, offset));
         }
         ParserState::DocStartBeforeXmlDecl => {
-            let res = misc_before_xmldecl(&buffer2);
+            let res = misc_before_xmldecl(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
                     state = ParserState::DocStartBeforeDocType;
 
                     match parseresult.1 {
@@ -807,15 +811,15 @@ fn read_event_splitted<'a, 'b, R: Read>(
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
-                    return read_event_splitted(state, bufreader, buffer2, offset);
+                    return read_event_splitted(state, bufreader, buffer2, buffer3, offset);
                 }
             }
         }
         ParserState::DocStartBeforeDocType => {
-            let res = misc_before_doctype(&buffer2);
+            let res = misc_before_doctype(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         MiscBeforeDoctype::PI(a) => {}
@@ -835,16 +839,16 @@ fn read_event_splitted<'a, 'b, R: Read>(
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
-                    return read_event_splitted(state, bufreader, buffer2, offset);
+                    return read_event_splitted(state, bufreader, buffer2, buffer3, offset);
                 }
             }
         }
         ParserState::DocStartBeforeDocTypeInsideComment => {
             //expect comment or comment-end
-            let res = insidecomment(&buffer2);
+            let res = insidecomment(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         InsideComment::Characters(_characters) => {}
@@ -865,10 +869,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
             }
         }
         ParserState::DocStart => {
-            let res = misc(&buffer2);
+            let res = misc(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
                     // state = ParserState::DocStartBeforeDocType;
 
                     match parseresult.1 {
@@ -887,16 +891,16 @@ fn read_event_splitted<'a, 'b, R: Read>(
                 Err(_err) => {
                     //try content!
                     state = ParserState::Content;
-                    return read_event_splitted(state, bufreader, buffer2, offset);
+                    return read_event_splitted(state, bufreader, buffer2, buffer3, offset);
                 }
             }
         }
         ParserState::DocStartInsideComment => {
             //expect comment or comment-end
-            let res = insidecomment(&buffer2);
+            let res = insidecomment(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         InsideComment::Characters(characters) => {}
@@ -917,10 +921,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
             }
         }
         ParserState::Content => {
-            let res = content_relaxed(&buffer2);
+            let res = content_relaxed(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match &parseresult.1 {
                         ContentRelaxed::CharData(event1) => {}
@@ -942,7 +946,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     return Err(error::Error::UnexpectedEof);
                 }
                 Err(_e) => {
-                    let ending = String::from_utf8_lossy(&buffer2);
+                    let ending = String::from_utf8_lossy(&buffer3.data());
                     let ending_truncated = match ending.char_indices().nth(50) {
                         None => &ending,
                         Some((idx, _)) => &ending[..idx],
@@ -958,10 +962,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
 
         ParserState::InsideCdata => {
             //expect cdata or cdata-end
-            let res = insidecdata(&buffer2);
+            let res = insidecdata(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         InsideCdata::Characters(characters) => {}
@@ -983,10 +987,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
         }
         ParserState::InsideComment => {
             //expect comment or comment-end
-            let res = insidecomment(&buffer2);
+            let res = insidecomment(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         InsideComment::Characters(characters) => {}
@@ -1008,15 +1012,15 @@ fn read_event_splitted<'a, 'b, R: Read>(
         }
         ParserState::DocEnd => {
             // EOF
-            if buffer2.len() == 0 {
+            if buffer3.data().len() == 0 {
                 // event2 = xml_sax::Event::EndDocument;
                 return Ok((InternalSuccess::EndDocument, state, offset));
             }
 
-            let res = misc(&buffer2);
+            let res = misc(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         Misc::PI(a) => {}
@@ -1039,10 +1043,10 @@ fn read_event_splitted<'a, 'b, R: Read>(
         }
         ParserState::DocEndInsideComment => {
             //expect comment or comment-end
-            let res = insidecomment(&buffer2);
+            let res = insidecomment(&buffer3.data());
             match res {
                 Ok(parseresult) => {
-                    offset = buffer2.offset(parseresult.0);
+                    offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
                         InsideComment::Characters(characters) => {}
@@ -1074,6 +1078,7 @@ impl<R: Read> Parser<R> {
             bufreader: BufReader::with_capacity(8192, reader),
             offset: 0,
             buffer2: RefCell::new(vec![]),
+            buffer3: circular::Buffer::with_capacity(28192),
             strbuffer: String::new(),
 
             element_level: 0, // should be same as self.element_list.len()
@@ -1099,7 +1104,10 @@ impl<R: Read> Parser<R> {
         {
             let data2 = self.bufreader.buffer();
 
-            self.buffer2.borrow_mut().extend_from_slice(data2);
+            // self.buffer2.borrow_mut().extend_from_slice(data2);
+            // println!("buffer: {:?} , datalen: {:?}",self.buffer3.available_space(),data2.len());
+            self.buffer3.write_all(data2).unwrap();
+            // self.buffer3.spa
             amt = data2.len();
         }
         self.bufreader.consume(amt);
@@ -1110,15 +1118,26 @@ impl<R: Read> Parser<R> {
     // rust is not yet smart about loops, nll, structs, conditional lifetimes
 
     pub fn read_event<'a>(&'a mut self) -> SaxResult<xml_sax::Event<'a>> {
-        self.buffer2.borrow_mut().drain(0..self.offset);
+        self.buffer3.consume(self.offset);
+        // self.buffer2.borrow_mut().drain(0..self.offset);
         self.offset = 0;
+        // {
+        //     let vec1;
+        //     {
+        //         vec1 = self.buffer2.borrow_mut().split_off(self.offset)
+        //     }
+        //     // let mut buf = self.buffer2.borrow_mut();
+        //     *self.buffer2.borrow_mut() = vec1;
+        // }
+
         self.strbuffer.clear();
         // read_data_splitted(&mut self.bufreader, &mut self.buffer2)?;
         // let event1;
 
         let mut bytes_read: usize = 1; //magic number
 
-        if self.bufreader.capacity() > self.buffer2.borrow().len() {
+        // if self.bufreader.capacity() > self.buffer2.borrow().len() {
+        if self.buffer3.available_space() > self.bufreader.capacity() {
             bytes_read = self.read_data()?;
         }
 
@@ -1130,8 +1149,13 @@ impl<R: Read> Parser<R> {
                 read_more_data = false;
             } else {
                 let buffercell = self.buffer2.borrow_mut();
-                let res =
-                    read_event_splitted(self.state, &self.bufreader, &buffercell, self.offset);
+                let res = read_event_splitted(
+                    self.state,
+                    &self.bufreader,
+                    &buffercell,
+                    &self.buffer3,
+                    self.offset,
+                );
                 match res {
                     Ok(o) => {
                         self.state = o.1;

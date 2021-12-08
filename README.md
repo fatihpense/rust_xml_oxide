@@ -7,19 +7,19 @@ Rust XML parser implementation that parses any well-formed XML defined in the [W
 ## Features
 
 - It uses constant-like memory for large XML files
-- Fast enough for most use cases. It can parse a 1GB XML file(in memory) around 30 seconds
+- Fast enough for most use cases. It can parse a 1GB XML file(in memory) around 23 seconds
 - Supports [Namespaces in XML 1.0](https://www.w3.org/TR/xml-names/)
 - It only supports UTF-8 encoding
 - It is a non-validating parser, it does important well-formedness checks
 - Currently, it ignores well-formedness inside Processing Instructions, DTD/DOCTYPE and parses them as raw strings. It checks the general well-formedness including these entities. (It even parses comments inside DOCTYPE to achieve this)
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
-- Reading chunk size is currently default 8KB, not configurable. If you have an element tag or DOCTYPE declaration that is bigger than buffer, it can backtrack and allocate more memory temporarily. It is tested to be working with 1 byte chunk size.
+- Should be tested again: ~~Reading chunk size is currently default 8KB, not configurable. If you have an element tag or DOCTYPE declaration that is bigger than buffer, it can backtrack and allocate more memory temporarily. It is tested to be working with 1 byte chunk size.~~
 
-### Unsafe and Refcell
+### Unsafe usage
 
 - `unsafe` is used for function `std::str::from_utf8_unchecked`. It is used on a slice of bytes that is already checked to be a valid UTF8 string with `std::str::from_utf8` before. The performance saving is not tested though.
-- `RefCell` is used because Rust is too restrictive for using mutables in conditional loops. Hopefully, non-lexical lifetimes will get better over time.
+- RefCell is not used anymore. Interestingly, just changing `RefCell<Vec<u8>>` to `circular::Buffer` passed Rust borrow checks. I'm leaving this note as a reference. ~~`RefCell` is used because Rust is too restrictive for using mutables in conditional loops. Hopefully, non-lexical lifetimes will get better over time.~~
 
 ## To Do
 

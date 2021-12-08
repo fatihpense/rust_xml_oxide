@@ -1,4 +1,5 @@
 mod internal;
+mod circular;
 pub mod parser;
 
 // Pull API
