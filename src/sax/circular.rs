@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(b.data(), &b"ab123Zgh"[..]);
     }
 
-    use std::str;
+    
     #[test]
     fn set_position() {
         let mut output = [0; 5];

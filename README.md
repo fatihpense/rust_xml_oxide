@@ -14,7 +14,7 @@ Rust XML parser implementation that parses any well-formed XML defined in the [W
 - Currently, it ignores well-formedness inside Processing Instructions, DTD/DOCTYPE and parses them as raw strings. It checks the general well-formedness including these entities. (It even parses comments inside DOCTYPE to achieve this)
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
-- Should be tested again: ~~Reading chunk size is currently default 8KB, not configurable. If you have an element tag or DOCTYPE declaration that is bigger than buffer, it can backtrack and allocate more memory temporarily. It is tested to be working with 1 byte chunk size.~~
+- Reading chunk size is currently default 8KB, not configurable. Internal buffer is 16KB. If you have an element tag or DOCTYPE declaration that is bigger than the buffer, it can backtrack and allocate more memory for the parsing operation. 1 byte chunk size is used for testing.
 
 ### Unsafe usage
 

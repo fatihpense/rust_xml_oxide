@@ -22,8 +22,8 @@ enum InternalSuccess<'a> {
 }
 
 use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{RefCell, RefMut},
+    borrow::BorrowMut,
+    cell::RefCell,
     io::{BufRead, BufReader, Read, Write},
     ops::Range,
     vec,
@@ -791,13 +791,13 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     state = ParserState::DocStartBeforeDocType;
 
                     match parseresult.1 {
-                        MiscBeforeXmlDecl::XmlDecl(a) => {}
-                        MiscBeforeXmlDecl::PI(a) => {}
-                        MiscBeforeXmlDecl::Whitespace(a) => {}
+                        MiscBeforeXmlDecl::XmlDecl(_a) => {}
+                        MiscBeforeXmlDecl::PI(_a) => {}
+                        MiscBeforeXmlDecl::Whitespace(_a) => {}
                         MiscBeforeXmlDecl::CommentStart => {
                             state = ParserState::DocStartBeforeDocTypeInsideComment;
                         }
-                        MiscBeforeXmlDecl::DocType(a) => {
+                        MiscBeforeXmlDecl::DocType(_a) => {
                             state = ParserState::DocStart;
                         }
                     }
@@ -820,12 +820,12 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
-                        MiscBeforeDoctype::PI(a) => {}
-                        MiscBeforeDoctype::Whitespace(a) => {}
+                        MiscBeforeDoctype::PI(_a) => {}
+                        MiscBeforeDoctype::Whitespace(_a) => {}
                         MiscBeforeDoctype::CommentStart => {
                             state = ParserState::DocStartBeforeDocTypeInsideComment;
                         }
-                        MiscBeforeDoctype::DocType(a) => {
+                        MiscBeforeDoctype::DocType(_a) => {
                             state = ParserState::DocStart;
                         }
                     }
@@ -874,8 +874,8 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     // state = ParserState::DocStartBeforeDocType;
 
                     match parseresult.1 {
-                        Misc::PI(a) => {}
-                        Misc::Whitespace(a) => {}
+                        Misc::PI(_a) => {}
+                        Misc::Whitespace(_a) => {}
                         Misc::CommentStart => {
                             state = ParserState::DocStartInsideComment;
                         }
@@ -901,7 +901,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
-                        InsideComment::Characters(characters) => {}
+                        InsideComment::Characters(_characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::DocStart;
                         }
@@ -925,11 +925,11 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match &parseresult.1 {
-                        ContentRelaxed::CharData(event1) => {}
-                        ContentRelaxed::StartElement(event1) => {}
-                        ContentRelaxed::EmptyElemTag(event1) => {}
-                        ContentRelaxed::EndElement(event1) => {}
-                        ContentRelaxed::Reference(event1) => {}
+                        ContentRelaxed::CharData(_event1) => {}
+                        ContentRelaxed::StartElement(_event1) => {}
+                        ContentRelaxed::EmptyElemTag(_event1) => {}
+                        ContentRelaxed::EndElement(_event1) => {}
+                        ContentRelaxed::Reference(_event1) => {}
                         ContentRelaxed::CdataStart => {
                             state = ParserState::InsideCdata;
                         }
@@ -966,7 +966,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
-                        InsideCdata::Characters(characters) => {}
+                        InsideCdata::Characters(_characters) => {}
                         InsideCdata::CdataEnd => {
                             state = ParserState::Content;
                         }
@@ -991,7 +991,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
-                        InsideComment::Characters(characters) => {}
+                        InsideComment::Characters(_characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::Content;
                         }
@@ -1021,8 +1021,8 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
-                        Misc::PI(a) => {}
-                        Misc::Whitespace(a) => {}
+                        Misc::PI(_a) => {}
+                        Misc::Whitespace(_a) => {}
                         Misc::CommentStart => {
                             state = ParserState::DocEndInsideComment;
                         }
@@ -1047,7 +1047,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
                     offset = buffer3.data().offset(parseresult.0);
 
                     match parseresult.1 {
-                        InsideComment::Characters(characters) => {}
+                        InsideComment::Characters(_characters) => {}
                         InsideComment::CommentEnd => {
                             state = ParserState::DocEnd;
                         }
@@ -1073,10 +1073,10 @@ impl<R: Read> Parser<R> {
     pub fn from_reader(reader: R) -> Parser<R> {
         Parser {
             state: ParserState::Initial,
-            bufreader: BufReader::with_capacity(1, reader),
+            bufreader: BufReader::with_capacity(8 * 1024, reader),
             offset: 0,
 
-            buffer3: circular::Buffer::with_capacity(1),
+            buffer3: circular::Buffer::with_capacity(16 * 1024),
             strbuffer: String::new(),
 
             element_level: 0, // should be same as self.element_list.len()
@@ -1101,6 +1101,18 @@ impl<R: Read> Parser<R> {
         let amt: usize;
         {
             let data2 = self.bufreader.buffer();
+            let data_len = data2.len();
+            //is it bigger than available space?
+
+            self.buffer3.shift();
+            if data_len > self.buffer3.available_space() {
+                let new_size = std::cmp::max(
+                    self.buffer3.position() + data_len,
+                    self.buffer3.capacity() * 2,
+                );
+
+                self.buffer3.grow(new_size);
+            }
 
             // self.buffer2.borrow_mut().extend_from_slice(data2);
             // println!("buffer: {:?} , datalen: {:?}",self.buffer3.available_space(),data2.len());
