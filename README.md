@@ -7,25 +7,27 @@ Rust XML parser implementation that parses any well-formed XML defined in the [W
 ## Features
 
 - It uses constant-like memory for large XML files
-- Fast enough for most use cases. It can parse a 1GB XML file(in memory) around 23 seconds
+- Fast enough for most use cases. It can parse a 1GB XML file(in memory) around 19 seconds. Note that it parses attributes and validates them before returning an event. Even if you don't use an event, this parser aims to ensure well-formedness of input.
 - Supports [Namespaces in XML 1.0](https://www.w3.org/TR/xml-names/)
 - It only supports UTF-8 encoding
 - It is a non-validating parser, it does important well-formedness checks
 - Currently, it ignores well-formedness inside Processing Instructions, DTD/DOCTYPE and parses them as raw strings. It checks the general well-formedness including these entities. (It even parses comments inside DOCTYPE to achieve this)
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
-- Reading chunk size is currently default 8KB, not configurable. Internal buffer is 16KB. If you have an element tag or DOCTYPE declaration that is bigger than the buffer, it can backtrack and allocate more memory for the parsing operation. 1 byte chunk size is used for testing.
+- Reading chunk size is currently default 8KB, not configurable. Internal ring buffer is 16KB. If you have an element tag or DOCTYPE declaration that is bigger than the buffer, it can backtrack and allocate more memory for the parsing operation. 1 byte chunk size is used for testing this behavior & UTF-8 handling.
 
 ### Unsafe usage
 
-- `unsafe` is used for function `std::str::from_utf8_unchecked`. It is used on a slice of bytes that is already checked to be a valid UTF8 string with `std::str::from_utf8` before. The performance saving is not tested though.
-- RefCell is not used anymore. Interestingly, just changing `RefCell<Vec<u8>>` to `circular::Buffer` passed Rust borrow checks. I'm leaving this note as a reference. ~~`RefCell` is used because Rust is too restrictive for using mutables in conditional loops. Hopefully, non-lexical lifetimes will get better over time.~~
+- `unsafe` is used for function `std::str::from_utf8_unchecked`. It is used on a slice of bytes that is already checked to be a valid UTF8 string with `std::str::from_utf8` before.
 
 ## To Do
 
-- Because the [namespace spec](https://www.w3.org/TR/xml-names/) brings constraints around the usage of ":" in names. Provide `namespace-aware=false` option to parse otherwise valid XML 1.0 documents .
+- Because the [namespace spec](https://www.w3.org/TR/xml-names/) brings constraints around the usage of ":" in names. Provide `namespace-aware=false` option to parse otherwise valid XML 1.0 documents.
+- Provide option & make default getting Reference entities (e.g. `&amp;`) in `Characters` event. Also handling these in attribute values. Or remove Reference from event interface?
+- In general, providing more configuration through builder pattern.
 - More tests
 - Parsing every entity including DTD to be able to utilize conformance test suite.
+- Fuzzing
 
 ## Example Usage
 
@@ -101,9 +103,11 @@ fn main() {
 
 ## History & Credits
 
-I tried to specify a push parser interface like the Java SAX library and implement it in 2017. The idea was to provide an interface that can have multiple implementations in the community. It was working(albeit slowly) but the main problem was that a push parser is not ergonomic in Rust. After thinking for a long time and learning more about Rust I decided to implement a pull parser. Currently, the SAX(pull) interface is just an `enum` and its behavior(like the possibility of splitting characters for each call).
+I tried to specify a push parser interface like the Java SAX library and implement it in 2017. The idea was to provide an interface that can have multiple implementations in the community. It was working(albeit slowly) but the main problem was that a push parser is not ergonomic in Rust. After thinking for a long time and learning more about Rust I decided to implement a pull parser. Currently, the interface is just an `enum` and its behavior(like the possibility of splitting characters for each call).
 
-If you want to use `xml_sax` interface to implement another parser we can discuss improving the interface. Currently, it is integrated into this crate.
+I know the term `StAX` is generally used for pull parsers. But `SAX` just means `Simple API for XML` and it doesn't have a spec unlike DOM. I think it is safe to use the term `SAX` for this library.
+
+If you want to use `xml_sax` interface to implement another parser we can discuss improving the interface. Currently, it is integrated into this crate. Only `crate::sax` module without submodules like `crate::sax::parser` should be regarded as the `xml_sax` interface.
 
 [Why a pull parser?](https://github.com/raphlinus/pulldown-cmark/blob/eb60cb976a12fb99972ddfc9b60cc1c6b20e096c/README.md#why-a-pull-parser) section in `pulldown-cmark` is a great explanation.
 
