@@ -30,7 +30,7 @@ fn test_namespaces() {
                         element_namespace_data.push_str(",");
                         //        print!("{}->{},", qualified_name, uri);
 
-                        for attr in el.attributes.iter() {
+                        for attr in el.attributes() {
                             attribute_namespace_data.push_str(attr.name);
                             attribute_namespace_data.push_str("->");
                             attribute_namespace_data.push_str(attr.namespace);

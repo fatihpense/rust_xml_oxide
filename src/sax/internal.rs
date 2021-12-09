@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 
+use std::ops::Range;
+
 use nom::{
     branch::alt,
     bytes::streaming::{is_not, tag, take_while1},
@@ -12,7 +14,7 @@ use nom::{
     error::{Error, ErrorKind, ParseError},
     multi::many0,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    Err, IResult, InputLength, Needed, Parser,
+    Err, IResult, InputLength, Needed, Offset, Parser,
 };
 
 #[allow(unused_imports)]
@@ -137,6 +139,7 @@ fn namestart_char(input: &[u8]) -> IResult<&[u8], &[u8]> {
         Some(s) => s.chars().next().unwrap(),
         None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
     };
+    // let c = unsafe { std::str::from_utf8_unchecked(&input[..width]) }.chars().next().unwrap();
 
     if is_namestart_char_t(c) {
         return Ok((&input[width..], &input[0..width]));
@@ -171,6 +174,7 @@ fn namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
         Some(s) => s.chars().next().unwrap(),
         None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
     };
+    // let c = unsafe { std::str::from_utf8_unchecked(&input[..width]) }.chars().next().unwrap();
 
     if is_namechar_t(c) {
         return Ok((&input[width..], &input[0..width]));
@@ -207,6 +211,8 @@ where
         }
     }
 }
+
+//means streaming in nom's terminology
 fn many0_custom_trycomplete<I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
     I: Clone + InputLength,
@@ -333,6 +339,60 @@ fn Attribute(input: &[u8]) -> IResult<&[u8], SAXAttribute> {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttributeRange {
+    pub value: Range<usize>,
+    pub name: Range<usize>,
+    // namespace aware
+    pub local_name: Range<usize>,
+    pub prefix: Range<usize>,
+    pub namespace: Range<usize>,
+}
+
+pub struct AttributeRanges {
+    pub data: Vec<AttributeRange>,
+}
+
+pub(crate) fn Attribute2(input: &[u8]) -> IResult<&[u8], AttributeRange> {
+    //move preceeded here
+    match preceded(multispace0, tuple((name, Eq, AttValue)))(input) {
+        Ok((i, o)) => {
+            let name_start = input.offset(o.0);
+            let name_end = name_start + o.0.len();
+
+            let val_start = input.offset(o.2);
+            let val_end = val_start + o.2.len();
+
+            return Ok((
+                i,
+                AttributeRange{
+                    name:  std::ops::Range { start:name_start , end: name_end } ,
+         
+                    value: (val_start..val_end),
+                    local_name: (0..0),
+                    prefix: (0..0),
+                    namespace: (0..0),
+                    
+                }
+                // SAXAttribute {
+                //     value: unsafe { std::str::from_utf8_unchecked(o.2) },
+                //     qualified_name: unsafe { std::str::from_utf8_unchecked(o.0) },
+                // },
+            ));
+        }
+        Err(e) => Err(e),
+    }
+}
+#[test]
+fn test_attribute2() {
+    let data = r#" a:b12='val2'"#.as_bytes();
+    let res = Attribute2(&data);
+    println!("{:?}", res);
+    let range = res.unwrap().1;
+    assert_eq!("a:b12".as_bytes(), &data[range.name.clone()]);
+    assert_eq!("val2".as_bytes(), &data[range.value.clone()]);
+}
+
 // let mut Attribute = ParsingRule::new("Attribute".to_owned(), RuleType::Sequence);
 // Attribute.children_names.push("Name".to_owned());
 // Attribute.children_names.push("Eq".to_owned());
@@ -373,7 +433,8 @@ struct SAXAttributeNsAware {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StartElement<'a> {
     pub name: &'a str,
-    pub attributes: Vec<SAXAttribute<'a>>,
+    // pub attributes: Vec<SAXAttribute<'a>>,
+    pub attributes_chunk: &'a [u8],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -385,7 +446,8 @@ fn STag<'a>(input: &'a [u8]) -> IResult<&[u8], StartElement<'a>> {
     match tuple((
         char('<'),
         name,
-        many0(preceded(multispace0, Attribute)),
+        recognize(many0_custom_trycomplete(preceded(multispace0, Attribute))),
+        // many0_custom_attributes,
         multispace0,
         char('>'),
     ))(input)
@@ -395,7 +457,7 @@ fn STag<'a>(input: &'a [u8]) -> IResult<&[u8], StartElement<'a>> {
                 i,
                 StartElement {
                     name: unsafe { std::str::from_utf8_unchecked(o.1) },
-                    attributes: o.2,
+                    attributes_chunk: o.2,
                 },
             ));
         }
@@ -409,7 +471,8 @@ fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], StartElement> {
     match tuple((
         char('<'),
         name,
-        many0(preceded(multispace0, Attribute)),
+        recognize(many0_custom_trycomplete(preceded(multispace0, Attribute))),
+        // many0(preceded(multispace0, Attribute)),
         multispace0,
         tag("/>"),
     ))(input)
@@ -418,7 +481,7 @@ fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], StartElement> {
             i,
             StartElement {
                 name: unsafe { std::str::from_utf8_unchecked(o.1) },
-                attributes: o.2,
+                attributes_chunk: o.2,
             },
         )),
 
@@ -501,6 +564,7 @@ fn CharData_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
         Some(s) => s.chars().next().unwrap(),
         None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
     };
+    // let c = unsafe { std::str::from_utf8_unchecked(&input[..width]) }.chars().next().unwrap();
 
     if is_CharData_single_pure_t(c) {
         return Ok((&input[width..], &input[0..width]));
@@ -860,6 +924,7 @@ fn inside_Comment_or_CDATA_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
         Some(s) => s.chars().next().unwrap(),
         None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
     };
+    // let c = unsafe { std::str::from_utf8_unchecked(&input[..width]) }.chars().next().unwrap();
 
     if is_xml_char_t(c) {
         return Ok((&input[width..], &input[0..width]));
@@ -1352,6 +1417,8 @@ fn nc_name(input: &[u8]) -> IResult<&[u8], &[u8]> {
 pub struct QName<'a> {
     pub prefix: &'a str,
     pub local_name: &'a str,
+    pub prefix_range: Range<usize>,
+    pub local_name_range: Range<usize>,
 }
 pub fn QName(input: &[u8]) -> IResult<&[u8], QName> {
     alt((
@@ -1361,14 +1428,34 @@ pub fn QName(input: &[u8]) -> IResult<&[u8], QName> {
                 separated_pair(nc_name, char(':'), nc_name),
                 nom::combinator::eof,
             ),
-            |(pre, loc)| QName {
-                prefix: unsafe { std::str::from_utf8_unchecked(pre) },
-                local_name: unsafe { std::str::from_utf8_unchecked(loc) },
+            |(pre, loc)| {
+                let pre_start = input.offset(pre);
+                let local_start = input.offset(loc);
+                QName {
+                    prefix: unsafe { std::str::from_utf8_unchecked(pre) },
+                    local_name: unsafe { std::str::from_utf8_unchecked(loc) },
+                    prefix_range: Range {
+                        start: pre_start,
+                        end: pre_start + pre.len(),
+                    },
+                    local_name_range: Range {
+                        start: local_start,
+                        end: local_start + loc.len(),
+                    },
+                }
             },
         )),
-        map(terminated(nc_name, nom::combinator::eof), |a| QName {
-            prefix: "",
-            local_name: unsafe { std::str::from_utf8_unchecked(a) },
+        map(terminated(nc_name, nom::combinator::eof), |loc| {
+            let local_start = input.offset(loc);
+            QName {
+                prefix: "",
+                local_name: unsafe { std::str::from_utf8_unchecked(loc) },
+                prefix_range: 0..0,
+                local_name_range: Range {
+                    start: local_start,
+                    end: local_start + loc.len(),
+                },
+            }
         }),
     ))(input)
 }
@@ -1398,7 +1485,9 @@ fn test_qname() {
             &b""[..],
             QName {
                 prefix: &"a",
-                local_name: &"b"
+                local_name: &"b",
+                prefix_range: 0..0,
+                local_name_range: 0..1
             }
         ))
     );

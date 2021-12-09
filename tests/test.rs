@@ -50,7 +50,7 @@ fn collect_with_parser<R: std::io::Read>(f: R) -> MyCollectorSaxHandler {
                 Event::StartElement(el) => {
                     data.start_counter = data.start_counter + 1;
                     data.start_el_name_vec.push(el.name.to_owned());
-                    for _attr in el.attributes.iter() {}
+                    for _attr in el.attributes() {}
                 }
                 Event::EndElement(el) => {
                     data.end_counter += 1;

@@ -24,8 +24,8 @@ fn books_attributes() {
             Ok(event) => {
                 match event {
                     Event::StartElement(el) => {
-                        for attr in el.attributes.iter() {
-                            //println!("{}->{}", attr.get_qualified_name(), attr.get_value());
+                        for attr in el.attributes() {
+                            println!("{}==>{}", attr.local_name, attr.namespace);
                             attributes_string.push_str(attr.name);
                             attributes_string.push_str("->");
                             attributes_string.push_str(attr.value);
