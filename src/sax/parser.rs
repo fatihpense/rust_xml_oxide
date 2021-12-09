@@ -185,7 +185,7 @@ fn parse_start_element(
                         let ns = push_ns_values_get_ns(
                             namespace_strbuffer,
                             "",
-                            &strbuffer[attr.name.clone()],
+                            &strbuffer[attr.value.clone()],
                             element_level,
                         );
                         namespace_list.push(ns);

@@ -1486,8 +1486,8 @@ fn test_qname() {
             QName {
                 prefix: &"a",
                 local_name: &"b",
-                prefix_range: 0..0,
-                local_name_range: 0..1
+                prefix_range: 0..1,
+                local_name_range: 2..3
             }
         ))
     );
