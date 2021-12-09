@@ -96,7 +96,7 @@ fn convert_start_element_name_and_add_attributes<'a>(
     event1: crate::sax::internal::StartElement,
     buffer3: &circular::Buffer,
     attribute_list: &'a mut Vec<AttributeRange>,
-) -> Range<usize> {
+) -> SaxResult<Range<usize>> {
     attribute_list.clear();
 
     let start = strbuffer.len();
@@ -133,67 +133,160 @@ fn convert_start_element_name_and_add_attributes<'a>(
 
                 attribute_list.push(attr_range)
             }
-            Err(_) => todo!(),
+            Err(_e) => {
+                return Err(error::Error::Parsing(format!(
+                    "Error while parsing attributes.",
+                )))
+            }
         }
     }
 
-    // for att in event1 {
-    //     let start = strbuffer.len();
-    //     let size = att.qualified_name.len();
-    //     strbuffer.push_str(att.qualified_name);
-    //     let qualified_name_range = Range {
-    //         start: start,
-    //         end: start + size,
-    //     };
+    Ok(element_name_range)
+}
 
-    //     let start = strbuffer.len();
-    //     let size = att.value.len();
-    //     strbuffer.push_str(att.value);
-    //     let value_range = Range {
-    //         start: start,
-    //         end: start + size,
-    //     };
+struct ElementRange {
+    prefix_range: Range<usize>,
+    local_name_range: Range<usize>,
+    namespace_range: Range<usize>,
+}
 
-    //     // let qualified_name = &self.strbuffer[start..(start + size)];
-    //     // let value = &self.strbuffer[start..(start + size)];
+fn parse_start_element(
+    start_element_name_range: Range<usize>,
+    is_namespace_aware: bool,
+    element_level: usize,
 
-    //     attributes2.push(SAXAttribute2 {
-    //         value: value_range,
-    //         qualified_name: qualified_name_range,
-    //     });
-    // }
+    strbuffer: &mut String,
+    attribute_list: &mut Vec<AttributeRange>,
+    namespace_strbuffer: &mut String,
+    namespace_list: &mut Vec<Namespace>,
+) -> SaxResult<ElementRange> {
+    let start_element_name = &strbuffer[start_element_name_range];
 
-    // let mut attributes: Vec<xml_sax::Attribute> = vec![];
-    // for att in attributes2 {
-    //     // let qualified_name = &self.strbuffer[start..(start + size)];
-    //     // let value = &self.strbuffer[start..(start + size)];
+    // let mut element_local_name = "";
+    // let mut element_namespace = "";
+    // let mut element_prefix = "";
 
-    //     attributes.push(xml_sax::Attribute {
-    //         value: &strbuffer[att.value],
-    //         name: &strbuffer[att.qualified_name],
-    //         local_name: "",
-    //         namespace: "",
-    //         prefix: "",
-    //     });
-    // }
+    let mut prefix_range = 0..0;
+    let mut local_name_range = 0..0;
+    let mut namespace_range = 0..0;
 
-    // xml_sax::StartElement {
-    //     name: &strbuffer[start..(start + size)],
-    //     // attributes: attributes,
-    //     is_empty: false,
+    // add namespaces
+    if is_namespace_aware {
+        //first process namespace definitions & parse prefix:local_name
+        for attr in attribute_list.iter_mut() {
+            let inp = strbuffer[attr.name.clone()].as_bytes();
 
-    //     local_name: "",
-    //     namespace: "",
-    //     prefix: "",
+            match QName(inp) {
+                Ok(qres) => {
+                    let qname = qres.1;
 
-    //     range_list: &attribute_list,
-    //     strbuffer: "",
-    //     namespace_strbuffer: "",
-    // }
+                    if qname.prefix == "" && qname.local_name == "xmlns" {
+                        //set default namespace
+                        let ns = push_ns_values_get_ns(
+                            namespace_strbuffer,
+                            "",
+                            &strbuffer[attr.name.clone()],
+                            element_level,
+                        );
+                        namespace_list.push(ns);
+                    }
 
-    // &strbuffer[start..(start + size)]
+                    if qname.prefix == "xmlns" {
+                        //set prefixed namespace
+                        let prefix = qname.local_name;
+                        let ns = push_ns_values_get_ns(
+                            namespace_strbuffer,
+                            prefix,
+                            &strbuffer[attr.value.clone()],
+                            element_level,
+                        );
+                        namespace_list.push(ns);
+                    }
+                    attr.local_name = Range {
+                        start: qname.local_name_range.start + attr.name.start.clone(),
+                        end: qname.local_name_range.end + attr.name.start.clone(),
+                    };
+                    // println!("TEST: {:?}", &strbuffer[attr.local_name.clone()]);
+                    attr.prefix = Range {
+                        start: qname.prefix_range.start + attr.name.start.clone(),
+                        end: qname.prefix_range.end + attr.name.start.clone(),
+                    };
+                    // let range_local_name = push_str_get_range(
+                    //     &mut strbuffer,
+                    //     qname.local_name,
+                    // );
+                    // attr.local_name = &strbuffer[range_local_name];
+                }
+                Err(_e) => {
+                    return Err(error::Error::Parsing(format!(
+                        "Attribute does not conform to QName spec: {}",
+                        &strbuffer[attr.name.clone()]
+                    )))
+                }
+            }
+        }
 
-    element_name_range
+        //resolve namespaces for element and attributes.
+
+        for attr in attribute_list.iter_mut() {
+            //Default namespace doesn't apply to attributes
+            if &strbuffer[attr.prefix.clone()] == "" || &strbuffer[attr.prefix.clone()] == "xmlns" {
+                continue;
+            }
+            match namespace_list.iter().rfind(|ns| {
+                &namespace_strbuffer[ns.prefix.clone()] == &strbuffer[attr.prefix.clone()]
+            }) {
+                Some(ns) => attr.namespace = ns.value.clone(),
+                None => {
+                    return Err(error::Error::Parsing(format!(
+                        "Namespace not found for prefix: {} , attribute: {} , element: {}",
+                        &strbuffer[attr.prefix.clone()],
+                        &strbuffer[attr.name.clone()],
+                        start_element_name
+                    )))
+                }
+            }
+        }
+
+        match QName(start_element_name.as_bytes()) {
+            Ok(qres) => {
+                let qname = qres.1;
+                // element_local_name = qname.local_name;
+                // element_prefix = qname.prefix;
+                local_name_range = qname.local_name_range;
+                prefix_range = qname.prefix_range;
+
+                match namespace_list.iter().rfind(|ns| {
+                    &namespace_strbuffer[ns.prefix.clone()] == &strbuffer[prefix_range.clone()]
+                }) {
+                    Some(ns) => namespace_range = ns.value.clone(),
+
+                    None => {
+                        if &strbuffer[prefix_range.clone()] == "" {
+                            //it is fine
+                        } else {
+                            return Err(error::Error::Parsing(format!(
+                                "Namespace prefix not found for element: {}",
+                                start_element_name
+                            )));
+                        }
+                    }
+                }
+            }
+            Err(_e) => {
+                return Err(error::Error::Parsing(format!(
+                    "Element name does not conform to QName spec: {}",
+                    start_element_name
+                )))
+            }
+        }
+    }
+
+    Ok(ElementRange {
+        prefix_range: prefix_range,
+        local_name_range: local_name_range,
+        namespace_range: namespace_range,
+    })
 }
 
 fn push_str_get_range(strbuffer: &mut String, addition: &str) -> Range<usize> {
@@ -337,143 +430,39 @@ fn event_converter<'a, 'b>(
                     event1,
                     buffer3,
                     attribute_list,
-                );
-                let start_element_name = &strbuffer[start_element_name_range];
+                )?;
 
                 element_level += 1;
 
                 //add element to list for expected tags check
 
-                let element_range = push_str_get_range(&mut element_strbuffer, start_element_name);
-                element_list.push(element_range.clone());
+                let element_list_range = push_str_get_range(
+                    &mut element_strbuffer,
+                    &strbuffer[start_element_name_range.clone()],
+                );
+                element_list.push(element_list_range.clone());
 
-                let mut element_local_name = "";
-                let mut element_namespace = "";
-                let mut element_prefix = "";
-
-                // add namespaces
-                if is_namespace_aware {
-                    //first process namespace definitions & parse prefix:local_name
-                    for attr in attribute_list.iter_mut() {
-                        let inp = strbuffer[attr.name.clone()].as_bytes();
-
-                        match QName(inp) {
-                            Ok(qres) => {
-                                let qname = qres.1;
-
-                                if qname.prefix == "" && qname.local_name == "xmlns" {
-                                    //set default namespace
-                                    let ns = push_ns_values_get_ns(
-                                        &mut namespace_strbuffer,
-                                        "",
-                                        &strbuffer[attr.name.clone()],
-                                        element_level,
-                                    );
-                                    namespace_list.push(ns);
-                                }
-
-                                if qname.prefix == "xmlns" {
-                                    //set prefixed namespace
-                                    let prefix = qname.local_name;
-                                    let ns = push_ns_values_get_ns(
-                                        &mut namespace_strbuffer,
-                                        prefix,
-                                        &strbuffer[attr.value.clone()],
-                                        element_level,
-                                    );
-                                    namespace_list.push(ns);
-                                }
-                                attr.local_name = Range {
-                                    start: qname.local_name_range.start + attr.name.start.clone(),
-                                    end: qname.local_name_range.end + attr.name.start.clone(),
-                                };
-                                // println!("TEST: {:?}", &strbuffer[attr.local_name.clone()]);
-                                attr.prefix = Range {
-                                    start: qname.prefix_range.start + attr.name.start.clone(),
-                                    end: qname.prefix_range.end + attr.name.start.clone(),
-                                };
-                                // let range_local_name = push_str_get_range(
-                                //     &mut strbuffer,
-                                //     qname.local_name,
-                                // );
-                                // attr.local_name = &strbuffer[range_local_name];
-                            }
-                            Err(_e) => {
-                                return Err(error::Error::Parsing(format!(
-                                    "Attribute does not conform to QName spec: {}",
-                                    &strbuffer[attr.name.clone()]
-                                )))
-                            }
-                        }
-                    }
-
-                    //resolve namespaces for element and attributes.
-
-                    for attr in attribute_list.iter_mut() {
-                        //Default namespace doesn't apply to attributes
-                        if &strbuffer[attr.prefix.clone()] == ""
-                            || &strbuffer[attr.prefix.clone()] == "xmlns"
-                        {
-                            continue;
-                        }
-                        match namespace_list.iter().rfind(|ns| {
-                            &namespace_strbuffer[ns.prefix.clone()]
-                                == &strbuffer[attr.prefix.clone()]
-                        }) {
-                            Some(ns) => attr.namespace = ns.value.clone(),
-                            None => {
-                                return Err(error::Error::Parsing(format!(
-                                "Namespace not found for prefix: {} , attribute: {} , element: {}",
-                                &strbuffer[attr.prefix.clone()],
-                                &strbuffer[attr.name.clone()],
-                                start_element_name
-                            )))
-                            }
-                        }
-                    }
-
-                    match QName(start_element_name.as_bytes()) {
-                        Ok(qres) => {
-                            let qname = qres.1;
-                            element_local_name = qname.local_name;
-                            element_prefix = qname.prefix;
-
-                            match namespace_list.iter().rfind(|ns| {
-                                &namespace_strbuffer[ns.prefix.clone()] == element_prefix
-                            }) {
-                                Some(ns) => {
-                                    element_namespace = &namespace_strbuffer[ns.value.clone()]
-                                }
-
-                                None => {
-                                    if element_prefix == "" {
-                                        //it is fine
-                                    } else {
-                                        return Err(error::Error::Parsing(format!(
-                                            "Namespace prefix not found for element: {}",
-                                            start_element_name
-                                        )));
-                                    }
-                                }
-                            }
-                        }
-                        Err(_e) => {
-                            return Err(error::Error::Parsing(format!(
-                                "Element name does not conform to QName spec: {}",
-                                start_element_name
-                            )))
-                        }
-                    }
-                }
+                // let mut element_local_name = "";
+                // let mut element_namespace = "";
+                // let mut element_prefix = "";
+                let element_ranges = parse_start_element(
+                    start_element_name_range.clone(),
+                    is_namespace_aware,
+                    element_level,
+                    strbuffer,
+                    attribute_list,
+                    namespace_strbuffer,
+                    namespace_list,
+                )?;
 
                 let start_element = xml_sax::StartElement {
-                    name: start_element_name,
+                    name: &strbuffer[start_element_name_range],
                     // attributes: attributes,
                     is_empty: false,
 
-                    local_name: element_local_name,
-                    namespace: element_namespace,
-                    prefix: element_prefix,
+                    local_name: &strbuffer[element_ranges.local_name_range],
+                    namespace: &namespace_strbuffer[element_ranges.namespace_range],
+                    prefix: &strbuffer[element_ranges.prefix_range],
 
                     range_list: attribute_list,
                     strbuffer: strbuffer,
@@ -483,137 +472,61 @@ fn event_converter<'a, 'b>(
                 xml_sax::Event::StartElement(start_element)
             }
             ContentRelaxed::EmptyElemTag(event1) => {
-                // if is_namespace_aware {
-                //     // clear up namespaces
-                //     match namespace_list
-                //         .iter()
-                //         .rposition(|ns| ns.level <= element_level)
-                //     {
-                //         Some(pos) => {
-                //             if let Some(starting_pos) =
-                //                 namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
-                //             {
-                //                 namespace_list.truncate(pos + 1);
-                //                 namespace_strbuffer.truncate(starting_pos);
-                //             }
-                //         }
-                //         None => {
-                //             // nothing to remove
-                //         }
-                //     }
-                // }
+                if is_namespace_aware {
+                    // clear up namespaces
+                    match namespace_list
+                        .iter()
+                        .rposition(|ns| ns.level <= element_level)
+                    {
+                        Some(pos) => {
+                            if let Some(starting_pos) =
+                                namespace_list.get(pos + 1).map(|ns| ns.prefix.start)
+                            {
+                                namespace_list.truncate(pos + 1);
+                                namespace_strbuffer.truncate(starting_pos);
+                            }
+                        }
+                        None => {
+                            // nothing to remove
+                        }
+                    }
+                }
 
-                // let mut start_element = convert_start_element_name_and_add_attributes(
-                //     strbuffer,
-                //     namespace_strbuffer,
-                //     event1,
-                //     buffer3,
-                //     attribute_list,
-                // );
-                // start_element.is_empty = true;
-                // element_level += 1;
-                // //todo decode
+                let start_element_name_range = convert_start_element_name_and_add_attributes(
+                    strbuffer,
+                    namespace_strbuffer,
+                    event1,
+                    buffer3,
+                    attribute_list,
+                )?;
 
-                // if is_namespace_aware {
-                //     //     //first process namespace definitions
-                //     //     for attr in start_element.attributes.iter_mut() {
-                //     //         match QName(attr.name.as_bytes()) {
-                //     //             Ok(qres) => {
-                //     //                 let qname = qres.1;
+                element_level += 1; // this is important before namespace handling
 
-                //     //                 if qname.prefix == "" && qname.local_name == "xmlns" {
-                //     //                     //set default namespace
-                //     //                     let ns = push_ns_values_get_ns(
-                //     //                         &mut namespace_strbuffer,
-                //     //                         "",
-                //     //                         attr.value,
-                //     //                         element_level,
-                //     //                     );
-                //     //                     namespace_list.push(ns);
-                //     //                 }
+                // element_list_range is not important for empty element tag
 
-                //     //                 if qname.prefix == "xmlns" {
-                //     //                     //set prefixed namespace
-                //     //                     let prefix = qname.local_name;
-                //     //                     let ns = push_ns_values_get_ns(
-                //     //                         &mut namespace_strbuffer,
-                //     //                         prefix,
-                //     //                         attr.value,
-                //     //                         element_level,
-                //     //                     );
-                //     //                     namespace_list.push(ns);
-                //     //                 }
-                //     //                 attr.local_name = qname.local_name;
-                //     //                 attr.prefix = qname.prefix;
-                //     //                 // let range_local_name = push_str_get_range(
-                //     //                 //     &mut strbuffer,
-                //     //                 //     qname.local_name,
-                //     //                 // );
-                //     //                 // attr.local_name = &strbuffer[range_local_name];
-                //     //             }
-                //     //             Err(_e) => {
-                //     //                 return Err(error::Error::Parsing(format!(
-                //     //                     "Attribute does not conform to QName spec: {}",
-                //     //                     attr.name
-                //     //                 )))
-                //     //             }
-                //     //         }
-                //     //     }
+                let element_ranges = parse_start_element(
+                    start_element_name_range.clone(),
+                    is_namespace_aware,
+                    element_level,
+                    strbuffer,
+                    attribute_list,
+                    namespace_strbuffer,
+                    namespace_list,
+                )?;
 
-                //     // for attr in start_element.attributes.iter_mut() {
-                //     //     //Default namespace doesn't apply to attributes
-                //     //     if attr.prefix == "" || attr.prefix == "xmlns" {
-                //     //         continue;
-                //     //     }
-                //     //     match namespace_list
-                //     //         .iter()
-                //     //         .rfind(|ns| &namespace_strbuffer[ns.prefix.clone()] == attr.prefix)
-                //     //     {
-                //     //         Some(ns) => attr.namespace = &namespace_strbuffer[ns.value.clone()],
-                //     //         None => {
-                //     //             return Err(error::Error::Parsing(format!(
-                //     //                 "Namespace not found for prefix: {} , attribute: {} , element: {}",
-                //     //                 attr.prefix, attr.name,start_element.name
-                //     //             )));
-                //     //         }
-                //     //     }
-                //     // }
+                let start_element = xml_sax::StartElement {
+                    name: &strbuffer[start_element_name_range],
+                    // attributes: attributes,
+                    is_empty: false,
 
-                //     //resolve namespaces for element and attributes.
+                    local_name: &strbuffer[element_ranges.local_name_range],
+                    namespace: &namespace_strbuffer[element_ranges.namespace_range],
+                    prefix: &strbuffer[element_ranges.prefix_range],
 
-                //     // match QName(start_element.name.as_bytes()) {
-                //     //     Ok(qres) => {
-                //     //         let qname = qres.1;
-                //     //         start_element.local_name = qname.local_name;
-                //     //         start_element.prefix = qname.prefix;
-
-                //     //         match namespace_list.iter().rfind(|ns| {
-                //     //             &namespace_strbuffer[ns.prefix.clone()] == start_element.prefix
-                //     //         }) {
-                //     //             Some(ns) => {
-                //     //                 start_element.namespace = &namespace_strbuffer[ns.value.clone()]
-                //     //             }
-
-                //     //             None => {
-                //     //                 if start_element.prefix == "" {
-                //     //                     //it is fine
-                //     //                 } else {
-                //     //                     return Err(error::Error::Parsing(format!(
-                //     //                         "Namespace not found for Element prefix. element: {}",
-                //     //                         start_element.name
-                //     //                     )));
-                //     //                 }
-                //     //             }
-                //     //         }
-                //     //     }
-                //     //     Err(_e) => {
-                //     //         return Err(error::Error::Parsing(format!(
-                //     //             "Element name does not conform to QName spec: {}",
-                //     //             start_element.name
-                //     //         )));
-                //     //     }
-                //     // }
-                // }
+                    range_list: attribute_list,
+                    strbuffer: strbuffer,
+                    namespace_strbuffer: namespace_strbuffer,
+                };
 
                 // element_level -= 1;
                 // if element_level == 0 {
@@ -621,9 +534,12 @@ fn event_converter<'a, 'b>(
                 //     state = ParserState::DocEnd;
                 // }
 
-                // xml_sax::Event::StartElement(start_element)
-                // //add endelement after this? no..?
-                xml_sax::Event::StartDocument
+                element_level -= 1;
+                if element_level == 0 {
+                    state = ParserState::DocEnd;
+                }
+
+                xml_sax::Event::StartElement(start_element)
             }
             ContentRelaxed::EndElement(event1) => {
                 //todo: check if it is the expected tag
