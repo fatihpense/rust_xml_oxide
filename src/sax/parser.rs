@@ -55,6 +55,62 @@ struct Namespace {
     prefix: Range<usize>,
     value: Range<usize>,
 }
+
+pub mod options {
+    pub enum NamespaceAwareness {
+        Enabled,
+        Disabled,
+    }
+}
+
+pub struct ParserBuilder<R: Read> {
+    parser: Parser<R>,
+}
+impl<R: Read> ParserBuilder<R> {
+    pub fn from_reader(reader: R) -> ParserBuilder<R> {
+        ParserBuilder {
+            parser: Parser {
+                state: ParserState::Initial,
+                bufreader: BufReader::with_capacity(8 * 1024, reader),
+                offset: 0,
+
+                buffer3: circular::Buffer::with_capacity(16 * 1024),
+                strbuffer: String::new(),
+
+                element_level: 0, // should be same as self.element_list.len()
+                element_list: Vec::with_capacity(10),
+                element_strbuffer: String::new(),
+
+                is_namespace_aware: true,
+                namespace_list: Vec::with_capacity(10),
+                namespace_strbuffer: String::new(),
+
+                attribute_list: Vec::with_capacity(5),
+            },
+        }
+    }
+
+    pub fn namespace_awareness(
+        mut self,
+        namespace_aware: options::NamespaceAwareness,
+    ) -> ParserBuilder<R> {
+        match namespace_aware {
+            options::NamespaceAwareness::Enabled => {
+                self.parser.is_namespace_aware = true;
+            }
+            options::NamespaceAwareness::Disabled => {
+                self.parser.is_namespace_aware = false;
+            }
+        }
+
+        self
+    }
+
+    pub fn build(self) -> Parser<R> {
+        self.parser
+    }
+}
+
 pub struct Parser<R: Read> {
     state: ParserState,
     bufreader: BufReader<R>,
@@ -517,7 +573,7 @@ fn event_converter<'a, 'b>(
                 let start_element = xml_sax::StartElement {
                     name: &strbuffer[start_element_name_range],
                     // attributes: attributes,
-                    is_empty: false,
+                    is_empty: true,
 
                     local_name: &strbuffer[element_ranges.local_name_range],
                     namespace: &namespace_strbuffer[element_ranges.namespace_range],
@@ -1100,24 +1156,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
 
 impl<R: Read> Parser<R> {
     pub fn from_reader(reader: R) -> Parser<R> {
-        Parser {
-            state: ParserState::Initial,
-            bufreader: BufReader::with_capacity(8 * 1024, reader),
-            offset: 0,
-
-            buffer3: circular::Buffer::with_capacity(16 * 1024),
-            strbuffer: String::new(),
-
-            element_level: 0, // should be same as self.element_list.len()
-            element_list: Vec::with_capacity(10),
-            element_strbuffer: String::new(),
-
-            is_namespace_aware: true,
-            namespace_list: Vec::with_capacity(10),
-            namespace_strbuffer: String::new(),
-
-            attribute_list: Vec::with_capacity(5),
-        }
+        ParserBuilder::from_reader(reader).build()
     }
 
     fn read_data(&mut self) -> Result<usize, std::io::Error> {
