@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Circular, a stream abstraction designed for use with nom
 //!
 //! Circular provides a `Buffer` type that wraps a `Vec<u8>` with a position

@@ -5,7 +5,7 @@ use crate::{
     sax::internal::{
         content_relaxed, insidecdata, insidecomment, misc, misc_before_doctype,
         misc_before_xmldecl, Attribute2, AttributeRange, ContentRelaxed, InsideCdata,
-        InsideComment, Misc, MiscBeforeDoctype, MiscBeforeXmlDecl, QName, SAXAttribute2,
+        InsideComment, Misc, MiscBeforeDoctype, MiscBeforeXmlDecl, QName,
     },
 };
 
@@ -22,11 +22,8 @@ enum InternalSuccess<'a> {
 }
 
 use std::{
-    borrow::BorrowMut,
-    cell::RefCell,
     io::{BufRead, BufReader, Read, Write},
     ops::Range,
-    vec,
 };
 
 use super::{circular, Attribute};
@@ -147,10 +144,7 @@ pub(crate) fn convert_attribute_range<'a>(
 
 fn convert_start_element_name_and_add_attributes<'a>(
     strbuffer: &'a mut String,
-    namespace_strbuffer: &'a mut String,
-
     event1: crate::sax::internal::StartElement,
-    buffer3: &circular::Buffer,
     attribute_list: &'a mut Vec<AttributeRange>,
 ) -> SaxResult<Range<usize>> {
     attribute_list.clear();
@@ -390,55 +384,35 @@ mod error {
 }
 
 // https://doc.rust-lang.org/nomicon/borrow-splitting.html
-fn read_data_splitted<R: Read>(
-    bufreader: &mut BufReader<R>,
-    buffer2: &mut Vec<u8>,
-) -> Result<(), std::io::Error> {
-    match bufreader.fill_buf() {
-        Ok(_ok) => {}
-        Err(err) => return Err(err),
-    }
+// fn read_data_splitted<R: Read>(
+//     bufreader: &mut BufReader<R>,
+//     buffer2: &mut Vec<u8>,
+// ) -> Result<(), std::io::Error> {
+//     match bufreader.fill_buf() {
+//         Ok(_ok) => {}
+//         Err(err) => return Err(err),
+//     }
 
-    let amt: usize;
-    {
-        let data2 = bufreader.buffer();
+//     let amt: usize;
+//     {
+//         let data2 = bufreader.buffer();
 
-        buffer2.extend_from_slice(data2);
-        amt = data2.len();
-    }
-    bufreader.consume(amt);
-    Ok(())
-}
-fn read_data_splitted_refcell<R: Read>(
-    bufreader: &mut BufReader<R>,
-    buffer2: &RefCell<Vec<u8>>,
-) -> Result<(), std::io::Error> {
-    match bufreader.fill_buf() {
-        Ok(_ok) => {}
-        Err(err) => return Err(err),
-    }
-
-    let amt: usize;
-    {
-        let data2 = bufreader.buffer();
-
-        buffer2.borrow_mut().extend_from_slice(data2);
-        amt = data2.len();
-    }
-    bufreader.consume(amt);
-    Ok(())
-}
+//         buffer2.extend_from_slice(data2);
+//         amt = data2.len();
+//     }
+//     bufreader.consume(amt);
+//     Ok(())
+// }
 
 //todo move all states to read_event_splitted
 //todo? simplify the enum here to remove duplicates,then we move complexity to read_event method
 fn event_converter<'a, 'b>(
     mut state: ParserState,
     internal_event: InternalSuccess<'b>,
-    buffer3: &'b circular::Buffer,
-
+    // buffer3: &'b circular::Buffer,
     element_list: &mut Vec<Range<usize>>,
     mut strbuffer: &'a mut String,
-    mut namespace_strbuffer: &'a mut String,
+    namespace_strbuffer: &'a mut String,
     namespace_list: &mut Vec<Namespace>,
 
     is_namespace_aware: bool,
@@ -482,9 +456,7 @@ fn event_converter<'a, 'b>(
 
                 let start_element_name_range = convert_start_element_name_and_add_attributes(
                     strbuffer,
-                    namespace_strbuffer,
                     event1,
-                    buffer3,
                     attribute_list,
                 )?;
 
@@ -550,9 +522,7 @@ fn event_converter<'a, 'b>(
 
                 let start_element_name_range = convert_start_element_name_and_add_attributes(
                     strbuffer,
-                    namespace_strbuffer,
                     event1,
-                    buffer3,
                     attribute_list,
                 )?;
 
@@ -1240,7 +1210,7 @@ impl<R: Read> Parser<R> {
                         let event = event_converter(
                             self.state,
                             o.0,
-                            &self.buffer3,
+                            // &self.buffer3,
                             &mut self.element_list,
                             &mut self.strbuffer,
                             &mut self.namespace_strbuffer,

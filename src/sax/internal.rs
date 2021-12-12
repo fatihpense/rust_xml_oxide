@@ -11,8 +11,7 @@ use nom::{
         streaming::{alpha1, alphanumeric1, digit1, multispace0},
     },
     combinator::{map, opt, recognize},
-    error::{Error, ErrorKind, ParseError},
-    multi::many0,
+    error::{Error, ErrorKind, ParseError}, 
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     Err, IResult, InputLength, Needed, Offset, Parser,
 };
@@ -347,10 +346,6 @@ pub struct AttributeRange {
     pub local_name: Range<usize>,
     pub prefix: Range<usize>,
     pub namespace: Range<usize>,
-}
-
-pub struct AttributeRanges {
-    pub data: Vec<AttributeRange>,
 }
 
 pub(crate) fn Attribute2(input: &[u8]) -> IResult<&[u8], AttributeRange> {
