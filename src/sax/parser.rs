@@ -744,6 +744,12 @@ fn event_converter<'a, 'b>(
             }
             ContentRelaxed::CdataStart => xml_sax::Event::StartCdataSection,
             ContentRelaxed::CommentStart => xml_sax::Event::StartComment,
+            ContentRelaxed::PI(event1) => {
+                let start = strbuffer.len();
+                let size = event1.len();
+                strbuffer.push_str(unsafe { std::str::from_utf8_unchecked(event1) });
+                xml_sax::Event::ProcessingInstruction(&strbuffer[start..(start + size)])
+            }
         },
         InternalSuccess::InsideCdata(ic) => match ic {
             InsideCdata::Characters(characters) => {
@@ -991,6 +997,7 @@ fn read_event_splitted<'a, 'b, R: Read>(
                         ContentRelaxed::CommentStart => {
                             state = ParserState::InsideComment;
                         }
+                        ContentRelaxed::PI(_) => {}
                     }
                     event2 = InternalSuccess::ContentRelaxed(parseresult.1);
                 }

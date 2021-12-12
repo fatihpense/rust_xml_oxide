@@ -11,7 +11,7 @@ Rust XML parser implementation that parses any well-formed XML defined in the [W
 - Supports [Namespaces in XML 1.0](https://www.w3.org/TR/xml-names/)
   - Because the namespace spec brings constraints around the usage of ":" in names. ParserBuilder has `namespace-aware=false` option to parse otherwise valid XML 1.0 documents.
 - It only supports UTF-8 encoding
-- It is a non-validating parser, it does important well-formedness checks
+- It is a non-validating processor, it does important well-formedness checks
 - Currently, it ignores well-formedness inside Processing Instructions, DTD/DOCTYPE and parses them as raw strings. It checks the general well-formedness including these entities. (It even parses comments inside DOCTYPE to achieve this)
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace

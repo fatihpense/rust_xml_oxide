@@ -1,6 +1,6 @@
 [package]
 name = "xml_oxide"
-version = "0.3.0"
+version = "0.4.0-prerelease"
 authors = ["Fatih Pense <fatihpense@gmail.com>"]
 license = "MIT"
 

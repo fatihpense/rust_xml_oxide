@@ -11,7 +11,7 @@ use nom::{
         streaming::{alpha1, alphanumeric1, digit1, multispace0},
     },
     combinator::{map, opt, recognize},
-    error::{Error, ErrorKind, ParseError}, 
+    error::{Error, ErrorKind, ParseError},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     Err, IResult, InputLength, Needed, Offset, Parser,
 };
@@ -362,13 +362,10 @@ pub(crate) fn Attribute2(input: &[u8]) -> IResult<&[u8], AttributeRange> {
                 i,
                 AttributeRange{
                     name:  std::ops::Range { start:name_start , end: name_end } ,
-         
                     value: (val_start..val_end),
                     local_name: (0..0),
                     prefix: (0..0),
-                    namespace: (0..0),
-                    
-                }
+                    namespace: (0..0) }
                 // SAXAttribute {
                 //     value: unsafe { std::str::from_utf8_unchecked(o.2) },
                 //     qualified_name: unsafe { std::str::from_utf8_unchecked(o.0) },
@@ -686,6 +683,7 @@ pub enum ContentRelaxed<'a> {
     EmptyElemTag(StartElement<'a>),
     EndElement(EndElement<'a>),
     Reference(Reference<'a>),
+    PI(&'a [u8]),
     CdataStart,
     CommentStart,
 }
@@ -710,7 +708,7 @@ fn content_relaxed_ETag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     }
 }
 
-//todo add endelement as next step or inform it is an emptyelem tag via event api?
+//add endelement as next step or inform it is an emptyelem tag via event api? - no.
 fn content_relaxed_EmptyElemTag(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     match EmptyElemTag(input) {
         Ok(succ) => Ok((succ.0, ContentRelaxed::EmptyElemTag(succ.1))),
@@ -744,7 +742,8 @@ fn content_relaxed_CommentStart(input: &[u8]) -> IResult<&[u8], ContentRelaxed> 
     }
 }
 
-// [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | Reference | CDATA | Comment ... todo: add PI
+// [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
+// [custom] relaxed ::= CharData | STag | EmptyElemTag | ETag | Reference | CDATA | Comment | PI
 pub fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
     alt((
         content_relaxed_CharData,
@@ -754,6 +753,7 @@ pub fn content_relaxed(input: &[u8]) -> IResult<&[u8], ContentRelaxed> {
         content_relaxed_Reference,
         content_relaxed_CdataStart,
         content_relaxed_CommentStart,
+        map(PI, |a| ContentRelaxed::PI(a)),
     ))(input)
 }
 
@@ -1124,107 +1124,216 @@ fn test_pi() {
     );
 }
 
-//only parsed without checking well-formedness inside
-// [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
-fn doctypedecl_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    tag("<!DOCTYPE")(input)
-}
-
-fn doctypedecl_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    tag(">")(input)
-}
-
-// fn inside_doctypedecl_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
-//     //if input = 0 , don't send incomplete
-//     // ref#streamcut
-//     if input.len() == 0 {
-//         return Err(Err::Error(Error::new(input, ErrorKind::Char)));
-//     }
-
-//     // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
-//     match tag::<&str, &[u8], Error<&[u8]>>(">")(input) {
-//         Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
-//         Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
-//         _ => (),
-//     };
-//     inside_Comment_or_CDATA_single_pure(input)
-// }
-
-//char that is not > or <
-fn inside_doctypedecl_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    if input.len() == 0 {
-        return Err(Err::Incomplete(Needed::new(1)));
-    }
-    let width = utf8_char_width(input[0]);
-
-    if input.len() < width {
-        return Err(Err::Incomplete(Needed::new(width - input.len())));
-    }
-
-    let c = match std::str::from_utf8(&input[..width]).ok() {
-        Some(s) => s.chars().next().unwrap(),
-        None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+mod dtd {
+    use super::{
+        is_xml_char_t, many0_custom_trycomplete, many1_custom, name, utf8_char_width, Comment, PI,
     };
 
-    if is_xml_char_t(c) && c != '<' && c != '>' {
-        return Ok((&input[width..], &input[0..width]));
-    } else {
-        return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    use nom::error_position;
+
+    use nom::{
+        branch::alt,
+        bytes::streaming::{is_not, tag, take_while1},
+        character::{
+            complete::{char, multispace1},
+            is_digit, is_hex_digit,
+            streaming::{alpha1, alphanumeric1, digit1, multispace0},
+        },
+        combinator::{map, opt, recognize},
+        error::{Error, ErrorKind, ParseError},
+        sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+        Err, IResult, InputLength, Needed, Offset, Parser,
+    };
+
+    //only parsed without checking well-formedness inside
+    // [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
+    fn doctypedecl_start(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        tag("<!DOCTYPE")(input)
     }
-}
 
-fn doctypedecl_dummy_internal(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(tuple((
-        tag("<"),
-        many0_custom_trycomplete(alt((
-            recognize(many1_custom(inside_doctypedecl_single_pure)),
-            Comment,
-            doctypedecl_dummy_internal,
-        ))),
-        tag(">"),
-    )))(input)
-}
+    fn doctypedecl_end(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        tag(">")(input)
+    }
 
-//  can contain nested < and > for attlist and internal comments
-fn doctypedecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(tuple((
-        doctypedecl_start,
-        many0_custom_trycomplete(alt((
-            recognize(many1_custom(inside_doctypedecl_single_pure)),
-            Comment,
-            doctypedecl_dummy_internal,
-        ))),
-        doctypedecl_end,
-    )))(input)
-}
+    // fn inside_doctypedecl_single(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    //     //if input = 0 , don't send incomplete
+    //     // ref#streamcut
+    //     if input.len() == 0 {
+    //         return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+    //     }
 
-#[test]
-fn test_doctypedecl() {
-    assert_eq!(
-        doctypedecl(r#"<!DOCTYPE>a"#.as_bytes()),
-        Ok((&b"a"[..], &br#"<!DOCTYPE>"#[..]))
-    );
+    //     // ']]>' should not appear in the cdata section, if we can't be sure because input is eof, we should request more data.
+    //     match tag::<&str, &[u8], Error<&[u8]>>(">")(input) {
+    //         Ok(r) => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+    //         Err(Err::Incomplete(n)) => return Err(Err::Incomplete(Needed::Unknown)),
+    //         _ => (),
+    //     };
+    //     inside_Comment_or_CDATA_single_pure(input)
+    // }
 
-    assert_eq!(
-        doctypedecl(r#"<!DOCTYPE greeting SYSTEM "hello.dtd">a"#.as_bytes()),
-        Ok((&b"a"[..], &br#"<!DOCTYPE greeting SYSTEM "hello.dtd">"#[..]))
-    );
+    //char that is not > or <
+    fn inside_doctypedecl_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        if input.len() == 0 {
+            return Err(Err::Incomplete(Needed::new(1)));
+        }
+        let width = utf8_char_width(input[0]);
 
-    assert_eq!(
-        doctypedecl(r#"<!DOCTYPE dummy>"#.as_bytes()),
-        Ok((&b""[..], &br#"<!DOCTYPE dummy>"#[..]))
-    );
+        if input.len() < width {
+            return Err(Err::Incomplete(Needed::new(width - input.len())));
+        }
 
-    assert_eq!(
-        doctypedecl(r#"<!DOCTYPE <!-- --> <[]>dummy>"#.as_bytes()),
-        Ok((&b""[..], &br#"<!DOCTYPE <!-- --> <[]>dummy>"#[..]))
-    );
+        let c = match std::str::from_utf8(&input[..width]).ok() {
+            Some(s) => s.chars().next().unwrap(),
+            None => return Err(Err::Error(Error::new(input, ErrorKind::Char))),
+        };
 
-    //also works > inside comment
-    assert_eq!(
-        doctypedecl(r#"<!DOCTYPE <!-- > --> <[]>dummy>"#.as_bytes()),
-        Ok((&b""[..], &br#"<!DOCTYPE <!-- > --> <[]>dummy>"#[..]))
-    );
+        if is_xml_char_t(c) && c != '<' && c != '>' {
+            return Ok((&input[width..], &input[0..width]));
+        } else {
+            return Err(Err::Error(Error::new(input, ErrorKind::Char)));
+        }
+    }
+
+    fn doctypedecl_dummy_internal(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("<"),
+            many0_custom_trycomplete(alt((
+                recognize(many1_custom(inside_doctypedecl_single_pure)),
+                Comment,
+                doctypedecl_dummy_internal,
+            ))),
+            tag(">"),
+        )))(input)
+    }
+
+    // [12] PubidLiteral ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
+    fn PubidLiteral_12(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((
+            delimited(char('"'), PubidChar_13_many, char('"')),
+            delimited(
+                char('\''),
+                recognize(many0_custom_trycomplete(alt((
+                    is_not(r#"'"#),
+                    PubidChar_13_many,
+                )))),
+                char('\''),
+            ),
+        ))(input)
+    }
+
+    //no tab
+    // [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
+    fn PubidChar_13_many(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(many0_custom_trycomplete(alt((
+            nom::bytes::streaming::take_while(nom::character::is_alphanumeric),
+            nom::bytes::streaming::is_a("-'()+,./:=?;!*#@$_% \r\n"),
+        ))))(input)
+    }
+
+    // [11] SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
+    fn SystemLiteral_11(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((
+            delimited(
+                char('"'),
+                recognize(many0_custom_trycomplete(is_not(r#"""#))),
+                char('"'),
+            ),
+            delimited(
+                char('\''),
+                recognize(many0_custom_trycomplete(is_not(r#"'"#))),
+                char('\''),
+            ),
+        ))(input)
+    }
+
+    // [75] ExternalID ::= 'SYSTEM' S SystemLiteral | 'PUBLIC' S PubidLiteral S SystemLiteral
+    fn ExternalID_75(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((
+            recognize(tuple((tag("SYSTEM"), multispace1, SystemLiteral_11))),
+            recognize(tuple((
+                tag("PUBLIC"),
+                multispace1,
+                PubidLiteral_12,
+                multispace1,
+                SystemLiteral_11,
+            ))),
+        ))(input)
+    }
+
+    // [69] PEReference ::= '%' Name ';'
+    fn PEReference_69(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((tag("%"), name, tag(";"))))(input)
+    }
+
+    // [28a] DeclSep ::= PEReference | S
+    fn DeclSep_28a(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((PEReference_69, multispace1)))(input)
+    }
+
+    //TODO
+    // [29] markupdecl ::= elementdecl | AttlistDecl | EntityDecl | NotationDecl | PI | Comment
+    fn markupdecl_29(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((
+            // elementdecl,
+            // AttlistDecl,
+            // EntityDecl,
+            // NotationDecl,
+            PI, Comment,
+        )))(input)
+    }
+
+    // [28b] intSubset ::= (markupdecl | DeclSep)*
+    fn intSubset_28b(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(many0_custom_trycomplete(alt((markupdecl_29, DeclSep_28a))))(input)
+    }
+
+    //  can contain nested < and > for attlist and internal comments
+
+    // [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
+    pub fn doctypedecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            doctypedecl_start,
+            multispace1,
+            name,
+            opt(tuple((multispace1, ExternalID_75))),
+            multispace0,
+            opt(tuple((tag("["), intSubset_28b, tag("]"), multispace0))),
+            doctypedecl_end,
+        )))(input)
+    }
+
+    #[test]
+    fn test_doctypedecl() {
+        assert_eq!(
+            doctypedecl(r#"<!DOCTYPE>a"#.as_bytes()),
+            // Ok((&b"a"[..], &br#"<!DOCTYPE>"#[..]))
+            Err(Err::Error(error_position!(
+                ">a".as_bytes(),
+                ErrorKind::MultiSpace
+            )))
+        );
+
+        assert_eq!(
+            doctypedecl(r#"<!DOCTYPE greeting SYSTEM "hello.dtd">a"#.as_bytes()),
+            Ok((&b"a"[..], &br#"<!DOCTYPE greeting SYSTEM "hello.dtd">"#[..]))
+        );
+
+        assert_eq!(
+            doctypedecl(r#"<!DOCTYPE dummy>"#.as_bytes()),
+            Ok((&b""[..], &br#"<!DOCTYPE dummy>"#[..]))
+        );
+
+        assert_eq!(
+            doctypedecl(r#"<!DOCTYPE myhtml  [  <!-- -->  ] >dummy"#.as_bytes()),
+            Ok((&b"dummy"[..], &br#"<!DOCTYPE myhtml  [  <!-- -->  ] >"#[..]))
+        );
+
+        //also works > inside comment
+        assert_eq!(
+            doctypedecl(r#"<!DOCTYPE test  [ ]>dummy"#.as_bytes()),
+            Ok((&b"dummy"[..], &br#"<!DOCTYPE test  [ ]>"#[..]))
+        );
+    }
 }
 
 pub enum InsideCdata<'a> {
@@ -1300,7 +1409,7 @@ pub fn misc_before_doctype(input: &[u8]) -> IResult<&[u8], MiscBeforeDoctype> {
         map(PI, |a| MiscBeforeDoctype::PI(a)),
         map(multispace1, |a| MiscBeforeDoctype::Whitespace(a)),
         map(Comment_start, |_a| MiscBeforeDoctype::CommentStart),
-        map(doctypedecl, |a| MiscBeforeDoctype::DocType(a)),
+        map(dtd::doctypedecl, |a| MiscBeforeDoctype::DocType(a)),
     ))(input)
 }
 pub fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
@@ -1309,7 +1418,7 @@ pub fn misc_before_xmldecl(input: &[u8]) -> IResult<&[u8], MiscBeforeXmlDecl> {
         map(PI, |a| MiscBeforeXmlDecl::PI(a)),
         map(multispace1, |a| MiscBeforeXmlDecl::Whitespace(a)),
         map(Comment_start, |_a| MiscBeforeXmlDecl::CommentStart),
-        map(doctypedecl, |a| MiscBeforeXmlDecl::DocType(a)),
+        map(dtd::doctypedecl, |a| MiscBeforeXmlDecl::DocType(a)),
     ))(input)
 }
 
