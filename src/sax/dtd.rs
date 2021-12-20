@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 
 use std::ops::Mul;
 
@@ -70,18 +71,6 @@ fn inside_doctypedecl_single_pure(input: &[u8]) -> IResult<&[u8], &[u8]> {
     }
 }
 
-fn doctypedecl_dummy_internal(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(tuple((
-        tag("<"),
-        many0_custom_trycomplete(alt((
-            recognize(many1_custom(inside_doctypedecl_single_pure)),
-            Comment,
-            doctypedecl_dummy_internal,
-        ))),
-        tag(">"),
-    )))(input)
-}
-
 // [12] PubidLiteral ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
 fn PubidLiteral_12(input: &[u8]) -> IResult<&[u8], &[u8]> {
     alt((
@@ -96,14 +85,29 @@ fn PubidLiteral_12(input: &[u8]) -> IResult<&[u8], &[u8]> {
         ),
     ))(input)
 }
+#[test]
+fn test_PubidLiteral_12() {
+    assert_eq!(
+        recognize(PubidLiteral_12)(r#""a not very interesting file""#.as_bytes()),
+        Ok((&b""[..], &br#""a not very interesting file""#[..]))
+    );
+}
 
 //no tab
 // [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
 fn PubidChar_13_many(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(many0_custom_trycomplete(alt((
-        nom::bytes::streaming::take_while(nom::character::is_alphanumeric),
-        nom::bytes::streaming::is_a("-'()+,./:=?;!*#@$_% \r\n"),
+        //take_while1 because many0 should always take one char or give error.
+        nom::bytes::complete::take_while1(nom::character::is_alphanumeric),
+        nom::bytes::complete::is_a("-'()+,./:=?;!*#@$_% \r\n"),
     ))))(input)
+}
+#[test]
+fn test_PubidChar_13_many() {
+    assert_eq!(
+        PubidChar_13_many(r#"a not very interesting file"#.as_bytes()),
+        Ok((&b""[..], &br#"a not very interesting file"#[..]))
+    );
 }
 
 // [11] SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
@@ -122,6 +126,14 @@ fn SystemLiteral_11(input: &[u8]) -> IResult<&[u8], &[u8]> {
     ))(input)
 }
 
+#[test]
+fn test_SystemLiteral_11() {
+    assert_eq!(
+        recognize(SystemLiteral_11)(r#""011.ent""#.as_bytes()),
+        Ok((&b""[..], &br#""011.ent""#[..]))
+    );
+}
+
 // [75] ExternalID ::= 'SYSTEM' S SystemLiteral | 'PUBLIC' S PubidLiteral S SystemLiteral
 fn ExternalID_75(input: &[u8]) -> IResult<&[u8], &[u8]> {
     alt((
@@ -135,15 +147,20 @@ fn ExternalID_75(input: &[u8]) -> IResult<&[u8], &[u8]> {
         ))),
     ))(input)
 }
+#[test]
+fn test_ExternalID_75() {
+    assert_eq!(
+        ExternalID_75(r#"PUBLIC "a not very interesting file" "011.ent""#.as_bytes()),
+        Ok((
+            &b""[..],
+            &br#"PUBLIC "a not very interesting file" "011.ent""#[..]
+        ))
+    );
+}
 
 // [69] PEReference ::= '%' Name ';'
 fn PEReference_69(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((tag("%"), name, tag(";"))))(input)
-}
-
-// [28a] DeclSep ::= PEReference | S
-fn DeclSep_28a(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(alt((PEReference_69, multispace1)))(input)
 }
 
 // [83] PublicID ::= 'PUBLIC' S PubidLiteral
@@ -204,6 +221,17 @@ fn EntityDef_73(input: &[u8]) -> IResult<&[u8], &[u8]> {
     ))(input)
 }
 
+#[test]
+fn test_EntityDef_73() {
+    assert_eq!(
+        EntityDef_73(r#"PUBLIC "a not very interesting file" "011.ent""#.as_bytes()),
+        Ok((
+            &b""[..],
+            &br#"PUBLIC "a not very interesting file" "011.ent""#[..]
+        ))
+    );
+}
+
 // [76] NDataDecl ::= S 'NDATA' S Name
 fn NDataDecl_76(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((multispace1, tag("NDATA"), multispace1, name)))(input)
@@ -245,12 +273,23 @@ fn AttlistDecl_52(input: &[u8]) -> IResult<&[u8], &[u8]> {
         tag("<!ATTLIST"),
         multispace1,
         name,
-        multispace1,
+        // multispace1,
         recognize(many0_custom_trycomplete(AttDef_53)),
         multispace0,
         tag(">"),
     )))(input)
 }
+
+#[test]
+fn test_AttlistDecl_52() {
+    let data2 = r#"<!ATTLIST e
+          a1 CDATA "a1 default"
+          a2 NMTOKENS "a2 default"
+        >"#
+    .as_bytes();
+    assert_eq!(AttlistDecl_52(data2), Ok((&b""[..], data2)));
+}
+
 // [53] AttDef ::= S Name S AttType S DefaultDecl
 fn AttDef_53(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
@@ -262,6 +301,36 @@ fn AttDef_53(input: &[u8]) -> IResult<&[u8], &[u8]> {
         DefaultDecl_60,
     )))(input)
 }
+
+#[test]
+fn test_AttDef_53() {
+    let data2 = r#"
+    a2 NMTOKENS "a2 default""#
+        .as_bytes();
+    assert_eq!(AttDef_53(data2), Ok((&b""[..], data2)));
+
+    let data2 = r#"
+    a1 CDATA "a1 default""#
+        .as_bytes();
+    assert_eq!(AttDef_53(data2), Ok((&b""[..], data2)));
+
+    let data2 = r#" 
+    a1 CDATA "a1 default"
+    a2 NMTOKENS "a2 default"
+   >"#
+    .as_bytes();
+    assert_eq!(
+        recognize(many0_custom_trycomplete(AttDef_53))(data2),
+        Ok((
+            &br#"
+   >"#[..],
+            &br#" 
+    a1 CDATA "a1 default"
+    a2 NMTOKENS "a2 default""#[..]
+        ))
+    );
+}
+
 // [60] DefaultDecl ::= '#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)
 fn DefaultDecl_60(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(alt((
@@ -324,7 +393,7 @@ fn AttType_54(input: &[u8]) -> IResult<&[u8], &[u8]> {
 fn Nmtoken_7(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(pair(
         super::internal::namechar,
-        many0_custom_trycomplete( super::internal::namechar),
+        many0_custom_trycomplete(super::internal::namechar),
     ))(input)
 }
 // [8] Nmtokens ::= Nmtoken (#x20 Nmtoken)*
@@ -343,13 +412,13 @@ fn StringType_55(input: &[u8]) -> IResult<&[u8], &[u8]> {
 // [56] TokenizedType ::= 'ID' | 'IDREF' | 'IDREFS' | 'ENTITY' | 'ENTITIES' | 'NMTOKEN' | 'NMTOKENS'
 fn TokenizedType_56(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(alt((
-        tag("ID"),
-        tag("IDREF"),
         tag("IDREFS"),
+        tag("IDREF"),
+        tag("ID"),
         tag("ENTITY"),
         tag("ENTITIES"),
+        tag("NMTOKENS"), //it should be checked before NMTOKEN
         tag("NMTOKEN"),
-        tag("NMTOKENS"),
     )))(input)
 }
 
@@ -364,6 +433,35 @@ fn elementdecl_45(input: &[u8]) -> IResult<&[u8], &[u8]> {
         multispace0,
         tag(">"),
     )))(input)
+}
+
+#[test]
+fn test_elementdecl() {
+    let _data = "]]".as_bytes();
+
+    assert_eq!(
+        elementdecl_45("<!ELEMENT br EMPTY>a".as_bytes()),
+        Ok((&b"a"[..], &b"<!ELEMENT br EMPTY>"[..]))
+    );
+    assert_eq!(
+        elementdecl_45("<!ELEMENT p (#PCDATA|emph)* >a".as_bytes()),
+        Ok((&b"a"[..], &b"<!ELEMENT p (#PCDATA|emph)* >"[..]))
+    );
+
+    let data2 = r#"<!ELEMENT doc (e)>"#.as_bytes();
+    assert_eq!(elementdecl_45(data2), Ok((&b""[..], data2)));
+
+    // assert_eq!(
+    //     elementdecl_45("<!ELEMENT %name.para; %content.para; >".as_bytes()),
+    //     Err(Err::Error(error_position!(
+    //         "]]>".as_bytes(),
+    //         ErrorKind::Char
+    //     )))
+    // );
+    assert_eq!(
+        elementdecl_45("<!ELEMENT container ANY>a".as_bytes()),
+        Ok((&b"a"[..], &b"<!ELEMENT container ANY>"[..]))
+    );
 }
 
 // [46] contentspec ::= 'EMPTY' | 'ANY' | Mixed | children
@@ -463,16 +561,44 @@ fn markupdecl_29(input: &[u8]) -> IResult<&[u8], &[u8]> {
         Comment,
     )))(input)
 }
+#[test]
+fn test_markupdecl_29() {
+    let data2 = r#"<!ENTITY x SYSTEM "013.ent">"#.as_bytes();
+    assert_eq!(markupdecl_29(data2), Ok((&b""[..], data2)));
 
+    let data2 = r#"<!ELEMENT doc (e)>"#.as_bytes();
+    assert_eq!(markupdecl_29(data2), Ok((&b""[..], data2)));
+}
+
+// [28a] DeclSep ::= PEReference | S
+fn DeclSep_28a(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(alt((PEReference_69, multispace1)))(input)
+}
 // [28b] intSubset ::= (markupdecl | DeclSep)*
 fn intSubset_28b(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(many0_custom_trycomplete(alt((markupdecl_29, DeclSep_28a))))(input)
+}
+#[test]
+fn test_intSubset_28b() {
+    let data2 = r#"<!ELEMENT doc (e)>
+        <!ELEMENT e (#PCDATA)>
+        <!ATTLIST e
+          a1 CDATA "a1 default"
+          a2 NMTOKENS "a2 default"
+        >
+        <!ENTITY x SYSTEM "013.ent">
+        ]"#
+    .as_bytes();
+    assert_eq!(
+        intSubset_28b(data2),
+        Ok((&b"]"[..], &data2[0..data2.len() - 1]))
+    );
 }
 
 //  can contain nested < and > for attlist and internal comments
 
 // [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
-pub fn doctypedecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+pub(crate) fn doctypedecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
         doctypedecl_start,
         multispace1,
@@ -499,6 +625,25 @@ fn test_doctypedecl() {
         doctypedecl(r#"<!DOCTYPE greeting SYSTEM "hello.dtd">a"#.as_bytes()),
         Ok((&b"a"[..], &br#"<!DOCTYPE greeting SYSTEM "hello.dtd">"#[..]))
     );
+
+    let data = r#"<!DOCTYPE doc [
+        <!ELEMENT doc (#PCDATA)>
+        <!ENTITY e PUBLIC "a not very interesting file" "011.ent">
+        ]>"#
+    .as_bytes();
+    assert_eq!(doctypedecl(data), Ok((&b""[..], data)));
+
+    let data2 = r#"<!DOCTYPE doc [
+<!ELEMENT doc (e)>
+<!ELEMENT e (#PCDATA)>
+<!ATTLIST e
+  a1 CDATA "a1 default"
+  a2 NMTOKENS "a2 default"
+>
+<!ENTITY x SYSTEM "013.ent">
+]>"#
+    .as_bytes();
+    assert_eq!(doctypedecl(data2), Ok((&b""[..], data2)));
 
     assert_eq!(
         doctypedecl(r#"<!DOCTYPE dummy>"#.as_bytes()),

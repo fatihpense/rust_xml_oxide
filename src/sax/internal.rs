@@ -1116,7 +1116,6 @@ fn test_pi() {
     );
 }
 
-
 pub enum InsideCdata<'a> {
     Characters(&'a [u8]),
     CdataEnd,
