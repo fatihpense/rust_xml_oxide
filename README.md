@@ -9,10 +9,10 @@ Rust XML parser implementation that parses any well-formed XML defined in the [W
 - It uses constant-like memory for large XML files
 - Fast enough for most use cases. It can parse a 1GB XML file(in memory) around 19 seconds. Note that it parses attributes and validates them before returning an event. Even if you don't use an event, this parser aims to ensure well-formedness of input.
 - Supports [Namespaces in XML 1.0](https://www.w3.org/TR/xml-names/)
-  - Because the namespace spec brings constraints around the usage of ":" in names. ParserBuilder has `namespace-aware=false` option to parse otherwise valid XML 1.0 documents.
+  - Because the namespace spec brings constraints around the usage of ":" in names. `ParserBuilder` has `namespace-aware=false` option to parse otherwise valid XML 1.0 documents.
 - It only supports UTF-8 encoding
 - It is a non-validating processor, it does important well-formedness checks
-- Currently, it ignores well-formedness inside Processing Instructions, DTD/DOCTYPE and parses them as raw strings. It checks the general well-formedness including these entities. (It even parses comments inside DOCTYPE to achieve this)
+- Currently, it checks well-formedness inside Processing Instructions and DTD/DOCTYPE. However, it parses them as raw strings.
 - It can parse not-well-formed documents (please report as a bug)
 - Entities that can be large are parsed as chunks to keep memory usage low: Character Data, CDATA Section, Comment, Whitespace
 - Reading chunk size is currently default 8KB, not configurable. Internal ring buffer is 16KB. If you have an element tag or DOCTYPE declaration that is bigger than the buffer, it can backtrack and allocate more memory for the parsing operation. 1 byte chunk size is used for testing this behavior & UTF-8 handling.

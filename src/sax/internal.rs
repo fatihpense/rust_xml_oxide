@@ -869,16 +869,6 @@ fn XMLDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
     )))(input)
 }
 
-// [27] Misc ::= Comment | PI | S
-//todo: comment | PI, we may need to separate
-// fn Misc(input: &[u8]) -> IResult<&[u8], &[u8]> {
-//     recognize(alt((multispace1,)))(input)
-// }
-
-// fn docstart_custom(input: &[u8]) -> IResult<&[u8], &[u8]> {
-//     recognize(tuple((XMLDecl, multispace0)))(input)
-// }
-
 #[test]
 fn test_XMLDecl() {
     let data = r#"<?xml version="1.0"  encoding="UTF-8" standalone='yes'?>"#.as_bytes();
@@ -1125,6 +1115,8 @@ fn test_pi() {
 }
 
 mod dtd {
+    use std::ops::Mul;
+
     use super::{
         is_xml_char_t, many0_custom_trycomplete, many1_custom, name, utf8_char_width, Comment, PI,
     };
@@ -1270,15 +1262,321 @@ mod dtd {
         recognize(alt((PEReference_69, multispace1)))(input)
     }
 
+    // [83] PublicID ::= 'PUBLIC' S PubidLiteral
+    fn PublicID_83(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((PEReference_69, multispace1)))(input)
+    }
+
+    // [82] NotationDecl ::= '<!NOTATION' S Name S (ExternalID | PublicID) S? '>'
+    fn NotationDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("<!NOTATION"),
+            multispace1,
+            name,
+            multispace1,
+            alt((ExternalID_75, PublicID_83)),
+            multispace0,
+        )))(input)
+    }
+
+    // [70] EntityDecl ::= GEDecl | PEDecl
+    fn EntityDecl_70(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((GEDecl_71, PEDecl_72))(input)
+    }
+
+    // [71] GEDecl ::= '<!ENTITY' S Name S EntityDef S? '>'
+    fn GEDecl_71(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("<!ENTITY"),
+            multispace1,
+            name,
+            multispace1,
+            EntityDef_73,
+            multispace0,
+            tag(">"),
+        )))(input)
+    }
+
+    // [72] PEDecl ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
+    fn PEDecl_72(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("<!ENTITY"),
+            multispace1,
+            tag("%"),
+            multispace1,
+            name,
+            multispace1,
+            PEDef_74,
+            multispace0,
+            tag(">"),
+        )))(input)
+    }
+
+    // [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
+    fn EntityDef_73(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((
+            recognize(tuple((ExternalID_75, opt(NDataDecl_76)))),
+            EntityValue,
+        ))(input)
+    }
+
+    // [76] NDataDecl ::= S 'NDATA' S Name
+    fn NDataDecl_76(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((multispace1, tag("NDATA"), multispace1, name)))(input)
+    }
+
+    // [74] PEDef ::= EntityValue | ExternalID
+    fn PEDef_74(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((ExternalID_75, EntityValue))(input)
+    }
+
+    // [9] EntityValue ::= '"' ([^%&"] | PEReference | Reference)* '"'
+    // |  "'" ([^%&'] | PEReference | Reference)* "'"
+    fn EntityValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((
+            delimited(
+                char('"'),
+                recognize(many0_custom_trycomplete(alt((
+                    is_not(r#"<%""#),
+                    super::Reference,
+                    PEReference_69,
+                )))),
+                char('"'),
+            ),
+            delimited(
+                char('\''),
+                recognize(many0_custom_trycomplete(alt((
+                    is_not(r#"<%'"#),
+                    super::Reference,
+                    PEReference_69,
+                )))),
+                char('\''),
+            ),
+        ))(input)
+    }
+
+    // [52] AttlistDecl ::= '<!ATTLIST' S Name AttDef* S? '>'
+    fn AttlistDecl_52(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("<!ATTLIST"),
+            multispace1,
+            name,
+            multispace1,
+            recognize(many0_custom_trycomplete(AttDef_53)),
+            multispace0,
+            tag(">"),
+        )))(input)
+    }
+    // [53] AttDef ::= S Name S AttType S DefaultDecl
+    fn AttDef_53(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            multispace1,
+            name,
+            multispace1,
+            AttType_54,
+            multispace1,
+            DefaultDecl_60,
+        )))(input)
+    }
+    // [60] DefaultDecl ::= '#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)
+    fn DefaultDecl_60(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((
+            tag("#REQUIRED"),
+            tag("#IMPLIED"),
+            recognize(tuple((
+                opt(tuple((tag("#FIXED"), multispace1))),
+                super::AttValue,
+            ))),
+        )))(input)
+    }
+
+    // [57] EnumeratedType ::= NotationType | Enumeration
+    fn EnumeratedType_57(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((NotationType_58, Enumeration_59))(input)
+    }
+
+    // [58] NotationType ::= 'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'
+    fn NotationType_58(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("NOTATION"),
+            multispace1,
+            tag("("),
+            multispace0,
+            name,
+            recognize(many0_custom_trycomplete(tuple((
+                multispace0,
+                tag("|"),
+                multispace0,
+                name,
+                multispace0,
+            )))),
+            tag(")"),
+        )))(input)
+    }
+
+    // [59] Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
+    fn Enumeration_59(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("("),
+            multispace0,
+            Nmtoken_7,
+            recognize(many0_custom_trycomplete(tuple((
+                multispace0,
+                tag("|"),
+                multispace0,
+                Nmtoken_7,
+            )))),
+            multispace0,
+            tag(")"),
+        )))(input)
+    }
+
+    // [54] AttType ::= StringType | TokenizedType | EnumeratedType
+    fn AttType_54(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        alt((StringType_55, TokenizedType_56, EnumeratedType_57))(input)
+    }
+
+    // [7] Nmtoken ::= (NameChar)+
+    fn Nmtoken_7(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(pair(
+            super::namechar,
+            many0_custom_trycomplete(super::namechar),
+        ))(input)
+    }
+    // [8] Nmtokens ::= Nmtoken (#x20 Nmtoken)*
+    fn Nmtokens_8(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(pair(
+            Nmtoken_7,
+            many0_custom_trycomplete(tuple((char(' '), Nmtoken_7))),
+        ))(input)
+    }
+
+    // [55] StringType ::= 'CDATA'
+    fn StringType_55(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        tag("CDATA")(input)
+    }
+
+    // [56] TokenizedType ::= 'ID' | 'IDREF' | 'IDREFS' | 'ENTITY' | 'ENTITIES' | 'NMTOKEN' | 'NMTOKENS'
+    fn TokenizedType_56(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((
+            tag("ID"),
+            tag("IDREF"),
+            tag("IDREFS"),
+            tag("ENTITY"),
+            tag("ENTITIES"),
+            tag("NMTOKEN"),
+            tag("NMTOKENS"),
+        )))(input)
+    }
+
+    // [45] elementdecl ::= '<!ELEMENT' S Name S contentspec S? '>'
+    fn elementdecl_45(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("<!ELEMENT"),
+            multispace1,
+            name,
+            multispace1,
+            contentspec_46,
+            multispace0,
+            tag(">"),
+        )))(input)
+    }
+
+    // [46] contentspec ::= 'EMPTY' | 'ANY' | Mixed | children
+    fn contentspec_46(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((tag("EMPTY"), tag("ANY"), Mixed_51, children_47)))(input)
+    }
+
+    // [51] Mixed ::= '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*' | '(' S? '#PCDATA' S? ')'
+    fn Mixed_51(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(alt((
+            recognize(tuple((
+                tag("("),
+                multispace0,
+                tag("#PCDATA"),
+                recognize(many0_custom_trycomplete(tuple((
+                    multispace0,
+                    tag("|"),
+                    multispace0,
+                    name,
+                )))),
+                multispace0,
+                tag(")*"),
+            ))),
+            recognize(tuple((
+                tag("("),
+                multispace0,
+                tag("#PCDATA"),
+                multispace0,
+                tag(")"),
+            ))),
+        )))(input)
+    }
+
+    // [47] children ::= (choice | seq) ('?' | '*' | '+')?
+    fn children_47(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            alt((choice_49, seq_50)),
+            opt(alt((char('?'), char('*'), char('+')))),
+        )))(input)
+    }
+
+    // [48] cp ::= (Name | choice | seq) ('?' | '*' | '+')?
+    fn cp_48(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            alt((name, choice_49, seq_50)),
+            opt(alt((char('?'), char('*'), char('+')))),
+        )))(input)
+    }
+
+    // [49] choice ::= '(' S? cp ( S? '|' S? cp )+ S? ')'
+    fn choice_49(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("("),
+            multispace0,
+            cp_48,
+            multispace0, // second choice (first for +)
+            tag("|"),
+            multispace0,
+            cp_48, // second choice end
+            recognize(many0_custom_trycomplete(tuple((
+                multispace0,
+                tag("|"),
+                multispace0,
+                cp_48,
+            )))),
+            multispace0,
+            tag(")"),
+        )))(input)
+    }
+
+    // [50] seq ::= '(' S? cp ( S? ',' S? cp )* S? ')'
+    fn seq_50(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        recognize(tuple((
+            tag("("),
+            multispace0,
+            cp_48,
+            recognize(many0_custom_trycomplete(tuple((
+                multispace0,
+                tag(","),
+                multispace0,
+                cp_48,
+            )))),
+            multispace0,
+            tag(")"),
+        )))(input)
+    }
+
     //TODO
     // [29] markupdecl ::= elementdecl | AttlistDecl | EntityDecl | NotationDecl | PI | Comment
     fn markupdecl_29(input: &[u8]) -> IResult<&[u8], &[u8]> {
         recognize(alt((
-            // elementdecl,
-            // AttlistDecl,
-            // EntityDecl,
-            // NotationDecl,
-            PI, Comment,
+            elementdecl_45,
+            AttlistDecl_52,
+            EntityDecl_70,
+            NotationDecl,
+            PI,
+            Comment,
         )))(input)
     }
 
@@ -1396,6 +1694,7 @@ pub enum Misc<'a> {
 //     // }
 // }
 
+// [27] Misc ::= Comment | PI | S
 // [custom]
 pub fn misc(input: &[u8]) -> IResult<&[u8], Misc> {
     alt((

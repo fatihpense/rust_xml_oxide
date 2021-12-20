@@ -404,8 +404,9 @@ mod error {
 //     Ok(())
 // }
 
-//todo move all states to read_event_splitted
-//todo? simplify the enum here to remove duplicates,then we move complexity to read_event method
+//moving all states to read_event?
+//we can also simplify the enum here to remove duplicates,
+// then we have to move complexity to read_event method
 fn event_converter<'a, 'b>(
     mut state: ParserState,
     internal_event: InternalSuccess<'b>,
@@ -432,8 +433,6 @@ fn event_converter<'a, 'b>(
                 xml_sax::Event::Characters(&strbuffer[start..(start + size)])
             }
             ContentRelaxed::StartElement(event1) => {
-                //todo decode
-
                 if is_namespace_aware {
                     // clear up namespaces
                     match namespace_list
@@ -568,7 +567,7 @@ fn event_converter<'a, 'b>(
                 xml_sax::Event::StartElement(start_element)
             }
             ContentRelaxed::EndElement(event1) => {
-                //todo: check if it is the expected tag
+                //check if it is the expected tag
 
                 match element_list.pop() {
                     Some(r) => {
@@ -580,8 +579,6 @@ fn event_converter<'a, 'b>(
                                 &element_strbuffer[r.clone()],
                                 event1.name
                             )));
-
-                            // TODO Expected closing tag: ... &element_strbuffer[r.clone()] found event1.name
                         }
                     }
                     None => {
@@ -1238,6 +1235,7 @@ impl<R: Read> Parser<R> {
                         };
                     }
                     Err(error::Error::UnexpectedEof) => {
+                        //check eof increase internal buffer.
                         //try reading again
                         // read_data_splitted_refcell(&mut self.bufreader, &self.buffer2)?;
                         if bytes_read == 0 {
@@ -1247,7 +1245,6 @@ impl<R: Read> Parser<R> {
                         }
                     }
                     Err(err) => {
-                        //todo check eof increase internal buffer.
                         return Err(err);
                     }
                 }
