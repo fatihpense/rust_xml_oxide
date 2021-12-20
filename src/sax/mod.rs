@@ -1,5 +1,6 @@
 mod circular;
 mod internal;
+mod dtd;
 pub mod parser;
 
 use crate::sax::parser::convert_attribute_range;
