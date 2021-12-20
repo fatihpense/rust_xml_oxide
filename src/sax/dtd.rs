@@ -198,6 +198,12 @@ fn GEDecl_71(input: &[u8]) -> IResult<&[u8], &[u8]> {
     )))(input)
 }
 
+#[test]
+fn test_GEDecl_71() {
+    let data2 = r#"<!ENTITY e "&#60;foo></foo>">"#.as_bytes();
+    assert_eq!(GEDecl_71(data2), Ok((&b""[..], data2)));
+}
+
 // [72] PEDecl ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
 fn PEDecl_72(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(tuple((
@@ -230,6 +236,12 @@ fn test_EntityDef_73() {
             &br#"PUBLIC "a not very interesting file" "011.ent""#[..]
         ))
     );
+
+    let data2 = r#""&#60;foo></foo>""#.as_bytes();
+    assert_eq!(
+        EntityDef_73(data2),
+        Ok((&b""[..], &br#"&#60;foo></foo>"#[..]))
+    );
 }
 
 // [76] NDataDecl ::= S 'NDATA' S Name
@@ -249,7 +261,7 @@ fn EntityValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
         delimited(
             char('"'),
             recognize(many0_custom_trycomplete(alt((
-                is_not(r#"<%""#),
+                is_not(r#"%&""#),
                 super::internal::Reference,
                 PEReference_69,
             )))),
@@ -258,13 +270,23 @@ fn EntityValue(input: &[u8]) -> IResult<&[u8], &[u8]> {
         delimited(
             char('\''),
             recognize(many0_custom_trycomplete(alt((
-                is_not(r#"<%'"#),
+                is_not(r#"%&'"#),
                 super::internal::Reference,
                 PEReference_69,
             )))),
             char('\''),
         ),
     ))(input)
+}
+
+#[test]
+fn test_EntityValue() {
+    let data2 = r#""&#60;foo></foo>""#.as_bytes();
+
+    assert_eq!(
+        EntityValue(data2),
+        Ok((&b""[..], &data2[1..data2.len() - 1]))
+    );
 }
 
 // [52] AttlistDecl ::= '<!ATTLIST' S Name AttDef* S? '>'
@@ -568,6 +590,9 @@ fn test_markupdecl_29() {
 
     let data2 = r#"<!ELEMENT doc (e)>"#.as_bytes();
     assert_eq!(markupdecl_29(data2), Ok((&b""[..], data2)));
+
+    let data2 = r#"<!ENTITY e "&#60;foo></foo>">"#.as_bytes();
+    assert_eq!(markupdecl_29(data2), Ok((&b""[..], data2)));
 }
 
 // [28a] DeclSep ::= PEReference | S
@@ -588,6 +613,16 @@ fn test_intSubset_28b() {
         >
         <!ENTITY x SYSTEM "013.ent">
         ]"#
+    .as_bytes();
+    assert_eq!(
+        intSubset_28b(data2),
+        Ok((&b"]"[..], &data2[0..data2.len() - 1]))
+    );
+
+    let data2 = r#"<!ELEMENT doc (foo)>
+<!ELEMENT foo (#PCDATA)>
+<!ENTITY e "&#60;foo></foo>">
+    ]"#
     .as_bytes();
     assert_eq!(
         intSubset_28b(data2),
