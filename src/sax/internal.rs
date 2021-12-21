@@ -154,7 +154,7 @@ fn namestart_char(input: &[u8]) -> IResult<&[u8], &[u8]> {
 fn is_namechar_t(chr: char) -> bool {
     is_namestart_char_t(chr)
         || (chr >= '0' && chr <= '9')
-        || (chr >= '\u{0300}' && chr <= 'z')
+        || (chr >= '\u{0300}' && chr <= '\u{036F}')
         || (chr >= '\u{203F}' && chr <= '\u{2040}')
         || chr == '-'
         || chr == '.'
@@ -177,9 +177,11 @@ pub(crate) fn namechar(input: &[u8]) -> IResult<&[u8], &[u8]> {
     };
     // let c = unsafe { std::str::from_utf8_unchecked(&input[..width]) }.chars().next().unwrap();
 
+    // println!("checking char?: {:?}", &c);
     if is_namechar_t(c) {
         return Ok((&input[width..], &input[0..width]));
     } else {
+        // println!("No: {:?}", &input[0..width]);
         return Err(Err::Error(Error::new(input, ErrorKind::Char)));
     }
 }
@@ -275,6 +277,13 @@ where
 
 pub(crate) fn name(input: &[u8]) -> IResult<&[u8], &[u8]> {
     recognize(pair(namestart_char, many0_custom_trycomplete(namechar)))(input)
+}
+
+#[test]
+fn test_name001() {
+    let data2 = r#"A.-:̀·>"#.as_bytes();
+    // U+0300	̀	204 128	COMBINING GRAVE ACCENT
+    assert_eq!(name(&data2), Ok((&b">"[..], &data2[0..data2.len() - 1])));
 }
 
 // [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
@@ -481,6 +490,14 @@ fn EmptyElemTag(input: &[u8]) -> IResult<&[u8], StartElement> {
 
         Err(e) => Err(e),
     }
+}
+
+#[test]
+fn test_EmptyElemTag() {
+    let data = r#"<A.-:̀·/>"#.as_bytes();
+    let res = EmptyElemTag(&data);
+    println!("{:?}", res);
+    assert_eq!(res.is_ok(), true);
 }
 
 // [3] S ::= (#x20 | #x9 | #xD | #xA)+
