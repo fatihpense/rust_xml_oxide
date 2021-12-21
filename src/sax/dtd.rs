@@ -77,10 +77,7 @@ fn PubidLiteral_12(input: &[u8]) -> IResult<&[u8], &[u8]> {
         delimited(char('"'), PubidChar_13_many, char('"')),
         delimited(
             char('\''),
-            recognize(many0_custom_trycomplete(alt((
-                is_not(r#"'"#),
-                PubidChar_13_many,
-            )))),
+            recognize(PubidChar_13_many_except_single_quote),
             char('\''),
         ),
     ))(input)
@@ -90,6 +87,11 @@ fn test_PubidLiteral_12() {
     assert_eq!(
         recognize(PubidLiteral_12)(r#""a not very interesting file""#.as_bytes()),
         Ok((&b""[..], &br#""a not very interesting file""#[..]))
+    );
+
+    assert_eq!(
+        recognize(PubidLiteral_12)(r#"'whatever'"#.as_bytes()),
+        Ok((&b""[..], &br#"'whatever'"#[..]))
     );
 }
 
@@ -107,6 +109,21 @@ fn test_PubidChar_13_many() {
     assert_eq!(
         PubidChar_13_many(r#"a not very interesting file"#.as_bytes()),
         Ok((&b""[..], &br#"a not very interesting file"#[..]))
+    );
+}
+
+fn PubidChar_13_many_except_single_quote(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    recognize(many0_custom_trycomplete(alt((
+        //take_while1 because many0 should always take one char or give error.
+        nom::bytes::complete::take_while1(nom::character::is_alphanumeric),
+        nom::bytes::complete::is_a("-()+,./:=?;!*#@$_% \r\n"),
+    ))))(input)
+}
+#[test]
+fn test_PubidChar_13_many_except_single_quote() {
+    assert_eq!(
+        PubidChar_13_many_except_single_quote(r#"a not very interesting' file"#.as_bytes()),
+        Ok((&br#"' file"#[..], &br#"a not very interesting"#[..]))
     );
 }
 
@@ -156,6 +173,11 @@ fn test_ExternalID_75() {
             &br#"PUBLIC "a not very interesting file" "011.ent""#[..]
         ))
     );
+
+    assert_eq!(
+        ExternalID_75(r#"PUBLIC 'whatever' "e.dtd""#.as_bytes()),
+        Ok((&b""[..], &br#"PUBLIC 'whatever' "e.dtd""#[..]))
+    );
 }
 
 // [69] PEReference ::= '%' Name ';'
@@ -165,7 +187,13 @@ fn PEReference_69(input: &[u8]) -> IResult<&[u8], &[u8]> {
 
 // [83] PublicID ::= 'PUBLIC' S PubidLiteral
 fn PublicID_83(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    recognize(alt((PEReference_69, multispace1)))(input)
+    recognize(tuple((tag("PUBLIC"), multispace1, PubidLiteral_12)))(input)
+}
+
+#[test]
+fn test_PublicID_83() {
+    let data2 = r#"PUBLIC "whatever""#.as_bytes();
+    assert_eq!(PublicID_83(data2), Ok((&b""[..], &data2[..])));
 }
 
 // [82] NotationDecl ::= '<!NOTATION' S Name S (ExternalID | PublicID) S? '>'
@@ -177,12 +205,31 @@ fn NotationDecl(input: &[u8]) -> IResult<&[u8], &[u8]> {
         multispace1,
         alt((ExternalID_75, PublicID_83)),
         multispace0,
+        tag(">"),
     )))(input)
+}
+
+#[test]
+fn test_NotationDecl() {
+    let data2 = r#"<!NOTATION n PUBLIC "whatever">]"#.as_bytes();
+    assert_eq!(
+        NotationDecl(data2),
+        Ok((&b"]"[..], &data2[0..data2.len() - 1]))
+    );
 }
 
 // [70] EntityDecl ::= GEDecl | PEDecl
 fn EntityDecl_70(input: &[u8]) -> IResult<&[u8], &[u8]> {
     alt((GEDecl_71, PEDecl_72))(input)
+}
+
+#[test]
+fn test_EntityDecl_70() {
+    let data2 = r#"<!ENTITY % e PUBLIC 'whatever' "e.dtd">]"#.as_bytes();
+    assert_eq!(
+        EntityDecl_70(data2),
+        Ok((&b"]"[..], &data2[0..data2.len() - 1]))
+    );
 }
 
 // [71] GEDecl ::= '<!ENTITY' S Name S EntityDef S? '>'
@@ -217,6 +264,15 @@ fn PEDecl_72(input: &[u8]) -> IResult<&[u8], &[u8]> {
         multispace0,
         tag(">"),
     )))(input)
+}
+
+#[test]
+fn test_PEDecl_72() {
+    let data2 = r#"<!ENTITY % e PUBLIC 'whatever' "e.dtd">]"#.as_bytes();
+    assert_eq!(
+        PEDecl_72(data2),
+        Ok((&b"]"[..], &data2[0..data2.len() - 1]))
+    );
 }
 
 // [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
@@ -628,6 +684,15 @@ fn test_intSubset_28b() {
         intSubset_28b(data2),
         Ok((&b"]"[..], &data2[0..data2.len() - 1]))
     );
+
+    let data2 = r#"<!ELEMENT doc (#PCDATA)>
+    <!NOTATION n PUBLIC "whatever">
+    ]"#
+    .as_bytes();
+    assert_eq!(
+        intSubset_28b(data2),
+        Ok((&b"]"[..], &data2[0..data2.len() - 1]))
+    );
 }
 
 //  can contain nested < and > for attlist and internal comments
@@ -679,6 +744,17 @@ fn test_doctypedecl() {
 ]>"#
     .as_bytes();
     assert_eq!(doctypedecl(data2), Ok((&b""[..], data2)));
+
+    let data2 = r#"<!DOCTYPE doc [
+<!ENTITY % e PUBLIC 'whatever' "e.dtd">
+<!ELEMENT doc (#PCDATA)>
+]>
+"#
+    .as_bytes();
+    assert_eq!(
+        doctypedecl(data2),
+        Ok((&b"\n"[..], &data2[0..data2.len() - 1]))
+    );
 
     assert_eq!(
         doctypedecl(r#"<!DOCTYPE dummy>"#.as_bytes()),
