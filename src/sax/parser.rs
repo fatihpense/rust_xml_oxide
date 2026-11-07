@@ -47,7 +47,7 @@ enum ParserState {
     DocEndInsideComment,
 }
 
-struct Namespace {
+pub(crate) struct Namespace {
     level: usize,
     prefix: Range<usize>,
     value: Range<usize>,
@@ -57,7 +57,12 @@ pub mod options {
     pub enum NamespaceAwareness {
         Enabled,
         Disabled,
-    }
+}
+
+    // pub enum EntityReferenceHandling {
+    //     AsCharactersResolveOnlyPredefinedAndCharacterReferences,
+    //     AsEntityReference,
+    // }
 }
 
 pub struct ParserBuilder<R: Read> {
@@ -194,13 +199,13 @@ fn convert_start_element_name_and_add_attributes<'a>(
     Ok(element_name_range)
 }
 
-struct ElementRange {
+pub(crate) struct ElementRange {
     prefix_range: Range<usize>,
     local_name_range: Range<usize>,
     namespace_range: Range<usize>,
 }
 
-fn parse_start_element(
+pub(crate) fn parse_start_element(
     start_element_name_range: Range<usize>,
     is_namespace_aware: bool,
     element_level: usize,

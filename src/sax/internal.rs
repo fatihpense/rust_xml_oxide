@@ -19,6 +19,8 @@ use nom::{
 #[allow(unused_imports)]
 use nom::error_position;
 
+use crate::sax::parser::parse_start_element;
+
 use super::dtd;
 
 // https://tools.ietf.org/html/rfc3629
@@ -500,6 +502,17 @@ fn test_EmptyElemTag() {
     assert_eq!(res.is_ok(), true);
 }
 
+#[test]
+fn test_EmptyElemTag2() {
+    let data = r#"<gnm:Cell Row="6" Col="2" ExprID="1"/><later>value</later>"#.as_bytes();
+    let res = EmptyElemTag(&data);
+    println!("{:?}", res);
+    assert_eq!(res.is_ok(), true);
+    let elem = res.unwrap().1;
+// parse_start_element(elem);
+    
+}
+
 // [3] S ::= (#x20 | #x9 | #xD | #xA)+
 // multispace0 fits
 
@@ -551,6 +564,18 @@ fn test_stag() {
     let data = r#"<B b="val" >"#.as_bytes();
     let res = STag(&data);
     println!("{:?}", res);
+}
+
+
+#[test]
+fn test_stag2() {
+    let data = r#"<gnm:Cell Row="6" Col="2" ExprID="1"/><later>value</later>"#.as_bytes();
+    let res = STag(&data);
+    println!("{:?}", res);
+    assert_eq!(res.is_ok(), false);
+
+// parse_start_element(elem);
+    
 }
 
 // [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
